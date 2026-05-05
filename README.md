@@ -156,7 +156,3 @@ https://biasdetectionmethods.shinyapps.io/main/
 | CALI10 | `Caliper10` |
 | CALI15 | `Caliper15` |
 | CALI20 | `Caliper20` |
-
-## Caveats
-
-This package source was generated directly from the uploaded scripts and paper description. In this environment, R is not installed, so the package source could not be validated with `R CMD check` here.
