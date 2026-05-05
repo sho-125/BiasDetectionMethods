@@ -139,8 +139,8 @@ https://biasdetectionmethods.shinyapps.io/main/
 | EGGER1 | `FE` |
 | EGGER2 | `RE` |
 | EGGER3 | `WLS` |
-| EGGER4 | `MAIVE` |
-| EGGER5 | `FATIV` |
+| EGGER4 | `MAIVE Type I` |
+| EGGER5 | `MAIVE Type II` |
 | EK | `EK` |
 | SKEW1 | `SKEWNESS` |
 | SKEW2 | `SKEWCombined` |
