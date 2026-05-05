@@ -6,3 +6,7 @@
 *.tar.gz
 .DS_Store
 Thumbs.db
+.Rproj.user
+.Rdata
+.httr-oauth
+.quarto
