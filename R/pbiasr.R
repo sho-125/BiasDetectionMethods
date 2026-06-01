@@ -178,6 +178,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   cat("\n")
   cat("Publication Bias Test Results\n")
   cat("=============================\n")
+  cat("Caution: These recommendations are derived from simulated meta-analyses based on the experimental conditions in Carter et al. (2019). Rankings reflect Balanced Accuracy in those simulations, not universal method performance, and should be applied with care because publication bias tests may behave differently in real meta-analytic applications.\n\n")
   cat("Null hypothesis: no publication bias\n")
   cat("\n")
   cat("Studies       : ", x$meta$n_studies, "\n", sep = "")
@@ -190,7 +191,6 @@ print.pbias_result <- function(x, digits = 3, ...) {
   cat("---------------------------\n")
   .print_publication_table(x$publication_table)
   cat("\n")
-  cat("Notes\n")
   cat("-----\n")
   cat(paste(strwrap(.format_output_note(x), width = 78), collapse = "\n"), "\n")
   cat("\n")
@@ -295,18 +295,25 @@ print.pbias_result <- function(x, digits = 3, ...) {
 }
 
 .format_output_note <- function(x) {
-  case_text <- if (!is.null(x$case) && !is.na(x$case$code)) {
-    paste0("case ", x$case$code)
+  case_code <- x$case$code
+  
+  case_text <- if (!is.null(case_code) && length(case_code) == 1 && !is.na(case_code)) {
+    paste0("case ", case_code)
   } else {
     "the detected paper case"
   }
+  
   paste(
+    "* Some tests were excluded from the rankings because the data conditions did not satisfy their applicability requirements or because they exhibited substantial convergence problems.\n",
     "Note: The estimated p-value is calculated from the user's data.",
-    paste0("Balanced Accuracy is based on the results from **OUR PUBLICATION BIAS** paper for ", case_text, "."),
-    "Rows are sorted by Balanced Accuracy when `sort_by_rank = TRUE`.",
-    "`not recommended` means the estimator did not meet the applicability/convergence criteria for this paper case.",
+    paste0(
+      "Balanced Accuracy is based on the results from OUR PUBLICATION BIAS paper for ",
+      case_text,
+      "."
+    ),
+    "Rows are sorted by Balanced Accuracy when sort_by_rank = TRUE.",
     "A small p-value indicates evidence of publication bias.",
-    "Please go to https://biasdetectionmethods.shinyapps.io/main/ and look around for the interactive version and additional context."
+    sep = "\n"
   )
 }
 
@@ -484,7 +491,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     balanced_accuracy <- performance_rank$balanced_accuracy[idx]
     balanced_accuracy_text <- ifelse(
       is.na(balanced_accuracy),
-      "not recommended",
+      "Unranked*",
       .format_num(balanced_accuracy, digits)
     )
     tab <- data.frame(
