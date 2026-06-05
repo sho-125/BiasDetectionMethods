@@ -176,10 +176,10 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
 #' @export
 print.pbias_result <- function(x, digits = 3, ...) {
   cat("\n")
-  cat("Publication Bias Test Results\n")
+  cat("Bias Test Results\n")
   cat("=============================\n")
-  cat("Caution: These recommendations are derived from simulated meta-analyses based on the experimental conditions in Carter et al. (2019). Rankings reflect Balanced Accuracy in those simulations, not universal method performance, and should be applied with care because publication bias tests may behave differently in real meta-analytic applications.\n\n")
-  cat("Null hypothesis: no publication bias\n")
+  cat("Caution: These recommendations are derived from simulated meta-analyses based on the experimental conditions in Carter et al. (2019). Rankings reflect Balanced Accuracy in those simulations, not universal method performance, and should be applied with care because bias-detection tests may behave differently in real meta-analytic applications.\n\n")
+  cat("Null hypothesis: no bias\n")
   cat("\n")
   cat("Studies       : ", x$meta$n_studies, "\n", sep = "")
   cat("obs supplied  : ", if (isTRUE(x$meta$has_obs)) "yes" else "no", "\n", sep = "")
@@ -307,12 +307,12 @@ print.pbias_result <- function(x, digits = 3, ...) {
     "* Some tests were excluded from the rankings because the data conditions did not satisfy their applicability requirements or because they exhibited substantial convergence problems.\n",
     "Note: The estimated p-value is calculated from the user's data.",
     paste0(
-      "Balanced Accuracy is based on the results from OUR PUBLICATION BIAS paper for ",
+      "Balanced Accuracy is based on the results from OUR BIAS paper for ",
       case_text,
       "."
     ),
     "Rows are sorted by Balanced Accuracy when sort_by_rank = TRUE.",
-    "A small p-value indicates evidence of publication bias.",
+    "A small p-value indicates evidence of bias.",
     sep = "\n"
   )
 }
@@ -477,44 +477,57 @@ print.pbias_result <- function(x, digits = 3, ...) {
     MoreArgs = list(digits = digits),
     USE.NAMES = FALSE
   )
-
+  
   tab <- data.frame(
     method = bias_summary$paper_method,
     pvalue = pvalue,
     stringsAsFactors = FALSE,
     check.names = FALSE
   )
-
+  
   if (!is.null(performance_rank) && nrow(performance_rank) > 0) {
     idx <- match(tab$method, performance_rank$method)
+    
     rank <- performance_rank$rank[idx]
+    
     balanced_accuracy <- performance_rank$balanced_accuracy[idx]
     balanced_accuracy_text <- ifelse(
       is.na(balanced_accuracy),
       "Unranked*",
       .format_num(balanced_accuracy, digits)
     )
+    
+    ldist <- performance_rank$ldist[idx]
+    ldist_text <- ifelse(
+      is.na(ldist),
+      "",
+      .format_num(ldist, digits)
+    )
+    
     tab <- data.frame(
-      Estimator = tab$method,
+      Method = tab$method,
       `P-value` = tab$pvalue,
       `Balanced Accuracy` = balanced_accuracy_text,
+      `Logit Distance`= ldist_text,
       stringsAsFactors = FALSE,
       check.names = FALSE
     )
+    
     if (isTRUE(sort_by_rank)) {
       order_key <- ifelse(is.na(rank), Inf, rank)
       tab <- tab[order(order_key, seq_len(nrow(tab))), , drop = FALSE]
     }
   } else {
     tab <- data.frame(
-      Estimator = tab$method,
+      Method = tab$method,
       `P-value` = tab$pvalue,
       `Balanced Accuracy` = "not available",
+      `Logit Distance` = "not available",
       stringsAsFactors = FALSE,
       check.names = FALSE
     )
   }
-
+  
   tab
 }
 
