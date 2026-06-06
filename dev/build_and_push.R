@@ -1,3 +1,64 @@
+
+# Set Git identity
+system('git config --global user.name "sho-125"')
+system('git config --global user.email "sanghyun.hong@canterbury.ac.nz"')
+
+# Also set it for this repo specifically
+system('git config user.name "sho-125"')
+system('git config user.email "sanghyun.hong@canterbury.ac.nz"')
+
+# Check status
+system("git status")
+
+
+
+system("git add .")
+system('git commit -m "Show ldist in publication table"')
+
+
+install.packages(c("devtools", "pkgbuild"))
+
+devtools::document()
+devtools::check()
+
+build_dir <- file.path(dirname(getwd()), "build")
+dir.create(build_dir, showWarnings = FALSE)
+
+tarball <- pkgbuild::build(
+  path = ".",
+  dest_path = build_dir,
+  binary = FALSE
+)
+
+tarball
+
+
+system("git branch -M main")
+
+remote_exists <- system(
+  "git remote get-url origin",
+  ignore.stdout = TRUE,
+  ignore.stderr = TRUE
+) == 0
+
+if (remote_exists) {
+  system("git remote set-url origin https://github.com/sho-125/BiasDetectionMethods.git")
+} else {
+  system("git remote add origin https://github.com/sho-125/BiasDetectionMethods.git")
+}
+
+system("git push -u origin main")
+
+
+
+
+
+
+
+
+
+
+
 stopifnot(file.exists("DESCRIPTION"))
 stopifnot(file.exists("pbiasr.Rproj"))
 

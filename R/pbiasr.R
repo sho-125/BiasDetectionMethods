@@ -307,7 +307,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     "* Some tests were excluded from the rankings because the data conditions did not satisfy their applicability requirements or because they exhibited substantial convergence problems.\n",
     "Note: The estimated p-value is calculated from the user's data.",
     paste0(
-      "Balanced Accuracy is based on the results from OUR BIAS paper for ",
+      "Balanced Accuracy and Logit Distance are based on the results from OUR BIAS paper for ",
       case_text,
       "."
     ),
