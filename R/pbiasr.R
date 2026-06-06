@@ -182,6 +182,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   cat("Null hypothesis: no bias\n")
   cat("\n")
   cat("Studies       : ", x$meta$n_studies, "\n", sep = "")
+  cat("I-squared     : ", .format_num(x$case$i2, digits), "\n", sep = "")
   cat("obs supplied  : ", if (isTRUE(x$meta$has_obs)) "yes" else "no", "\n", sep = "")
   if (!is.null(x$case)) {
     cat("Paper case    : ", .format_case_value(x$case, digits = digits), "\n", sep = "")
@@ -426,7 +427,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     case$code,
     " (", case$size_category, " size: ", case$size_rule,
     "; ", case$heterogeneity_category, " heterogeneity: ", case$heterogeneity_rule,
-    "; I2=", .format_num(case$i2, digits), ")"
+    ")"
   )
 }
 

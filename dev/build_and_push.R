@@ -158,9 +158,10 @@ print(tar_file)
 remotes::install_github(
   "sho-125/BiasDetectionMethods",
   dependencies = TRUE,
-  upgrade = "never",
+  upgrade = "always",
   force = TRUE
 )
+
 
 # Load package
 library(pbiasr)
