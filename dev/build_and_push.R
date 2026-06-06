@@ -1,3 +1,60 @@
+# Check you are in the package folder
+getwd()
+list.files()
+
+# Set Git identity
+system('git config --global user.name "sho-125"')
+system('git config --global user.email "sanghyun.hong@canterbury.ac.nz"')
+
+# Also set it for this repo specifically
+system('git config user.name "sho-125"')
+system('git config user.email "sanghyun.hong@canterbury.ac.nz"')
+
+# Optional but recommended: update package documentation
+devtools::document()
+
+# Optional but recommended: check package before pushing
+devtools::check()
+
+# Check current Git status
+system("git status")
+
+# Add all changed files
+system("git add .")
+
+# Commit changes
+system('git commit -m "Update R package output"')
+
+# Check branch name
+system("git branch")
+
+# Push to GitHub
+system("git push -u origin main")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Set Git identity
 system('git config --global user.name "sho-125"')
