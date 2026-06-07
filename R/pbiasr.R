@@ -18,6 +18,7 @@
 #'   \itemize{
 #'     \item \code{bias_summary}: one row per paper method, with publication-bias p-values.
 #'     \item \code{publication_table}: formatted display table of publication-bias tests.
+#'     \item \code{decision_rule}: practical decision-rule recommendation used to mark methods with \code{***}.
 #'     \item \code{case}: the paper case based on number of studies and I-squared.
 #'     \item \code{interpretation}: short interpretation text for the publication-bias tests.
 #'     \item \code{meta}: run metadata.
@@ -33,12 +34,12 @@
 pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
                         sort_by_rank = TRUE) {
   .validate_inputs(yi, sei, obs, study_id, alpha, sort_by_rank)
-
+  
   n <- length(yi)
   if (is.null(study_id)) {
     study_id <- seq_len(n)
   }
-
+  
   dt <- data.frame(
     eff = as.numeric(yi),
     se = as.numeric(sei),
@@ -48,12 +49,12 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
   if (!is.null(obs)) {
     dt$obs <- as.numeric(obs)
   }
-
+  
   # Metadata and mappings
   method_map <- .method_map()
   bias_rows <- vector("list", nrow(method_map))
   names(bias_rows) <- method_map$paper_method
-
+  
   # Helper for summary rows
   add_bias <- function(code_method, p_value, status = "ok", note = "") {
     idx <- match(code_method, method_map$code_method)
@@ -69,91 +70,94 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
     )
     invisible(NULL)
   }
-
+  
   # Baseline random-effects model (not counted among the 21 paper methods)
   baseline <- .fit_baseline_re(dt)
   case_info <- .classify_meta_case(n, baseline$model)
   performance_rank <- .type1_performance_table(case_info$code)
-
+  
   # EGGER1 - FE
   res <- .fit_egger_fe(dt)
   add_bias("FE", res$pub_bias_p, res$status, res$note)
-
+  
   # EGGER2 - RE
   res <- .fit_egger_re(dt)
   add_bias("RE", res$pub_bias_p, res$status, res$note)
-
+  
   # EGGER3 - WLS
   res <- .fit_egger_wls(dt)
   add_bias("WLS", res$pub_bias_p, res$status, res$note)
-
+  
   # EGGER4 - MAIVE
   res <- .fit_maive(dt)
   add_bias("MAIVE", res$pub_bias_p, res$status, res$note)
-
+  
   # EGGER5 - FATIV
   res <- .fit_fativ(dt)
   add_bias("FATIV", res$pub_bias_p, res$status, res$note)
-
+  
   # Selection models
   res <- .fit_psm3(dt)
   add_bias("3PSM", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_psm4(dt)
   add_bias("4PSM", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_ak1(dt)
   add_bias("AK1", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_ak2(dt)
   add_bias("AK2", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_puniform(dt)
   add_bias("Puniform", res$pub_bias_p, res$status, res$note)
-
+  
   # Other SE-based methods
   res <- .fit_ek(dt)
   add_bias("EK", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_begg(dt)
   add_bias("Begg", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_skew(dt, baseline$model)
   add_bias("SKEWNESS", res$skew_p, res$status, res$note)
   add_bias("SKEWCombined", res$combined_p, res$status, res$note)
-
+  
   # Excess significance tests
   res <- .fit_tes(dt, alpha = alpha)
   add_bias("TES", res$pub_bias_p, res$status, res$note)
-
+  
   res <- .fit_psst_tess(dt)
   add_bias("PSST", res$psst_p, res$status, res$note)
   add_bias("TESS", res$tess_p, res$status, res$note)
-
+  
   # Caliper tests
   res <- .fit_calipers(dt, alpha = alpha)
   for (i in seq_len(nrow(res$summary))) {
     add_bias(res$summary$code_method[i], res$summary$publication_bias_p[i],
              res$summary$status[i], res$summary$note[i])
   }
-
+  
   # Fill any missing summary rows with NA
   for (i in seq_len(nrow(method_map))) {
     if (is.null(bias_rows[[method_map$paper_method[i]]])) {
       add_bias(method_map$code_method[i], NA_real_, "not_run", "No result returned.")
     }
   }
-
+  
   bias_summary <- do.call(rbind, bias_rows)
   row.names(bias_summary) <- NULL
-
+  decision_rule <- .practical_decision_rule(case_info, bias_summary)
+  
   out <- list(
     bias_summary = .make_bias_summary(bias_summary),
     publication_table = .make_publication_table(
       bias_summary,
       performance_rank = performance_rank,
-      sort_by_rank = sort_by_rank
+      sort_by_rank = sort_by_rank,
+      decision_rule = decision_rule
     ),
+    decision_rule = decision_rule,
     case = case_info,
     interpretation = paste(
       "Null hypothesis: no publication bias.",
@@ -166,6 +170,7 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
       sort_by_rank = sort_by_rank,
       ranking_metric = "Balanced Accuracy",
       performance_source = "Performance tables from the publication bias paper",
+      recommendation_marker = "***",
       timestamp = Sys.time()
     )
   )
@@ -187,6 +192,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (!is.null(x$case)) {
     cat("Paper case    : ", .format_case_value(x$case, digits = digits), "\n", sep = "")
   }
+  if (!is.null(x$decision_rule)) {
+    cat("Decision rule : ", .format_decision_rule_value(x$decision_rule), "\n", sep = "")
+  }
   cat("\n")
   cat("Ranked by Balanced Accuracy\n")
   cat("---------------------------\n")
@@ -195,7 +203,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   cat("-----\n")
   cat(paste(strwrap(.format_output_note(x), width = 78), collapse = "\n"), "\n")
   cat("\n")
-
+  
   invisible(x)
 }
 
@@ -314,6 +322,11 @@ print.pbias_result <- function(x, digits = 3, ...) {
     ),
     "Rows are sorted by Balanced Accuracy when sort_by_rank = TRUE.",
     "A small p-value indicates evidence of bias.",
+    if (!is.null(x$decision_rule) && length(x$decision_rule$marked_methods) > 0) {
+      "*** marks the method recommended by the practical decision rule for the observed setting."
+    } else {
+      ""
+    },
     sep = "\n"
   )
 }
@@ -323,17 +336,17 @@ print.pbias_result <- function(x, digits = 3, ...) {
     cat("(no publication-bias results)\n")
     return(invisible(NULL))
   }
-
+  
   work <- as.data.frame(tab, stringsAsFactors = FALSE, check.names = FALSE)
   for (nm in names(work)) {
     work[[nm]] <- as.character(work[[nm]])
     work[[nm]][is.na(work[[nm]])] <- ""
   }
-
+  
   widths <- vapply(seq_along(work), function(i) {
     max(nchar(c(names(work)[i], work[[i]]), type = "width"))
   }, integer(1))
-
+  
   header <- paste(mapply(function(value, width) {
     format(value, width = width, justify = "left")
   }, names(work), widths, USE.NAMES = FALSE), collapse = "  ")
@@ -341,7 +354,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
                        character(1)), collapse = "  ")
   cat(header, "\n", sep = "")
   cat(rule, "\n", sep = "")
-
+  
   for (i in seq_len(nrow(work))) {
     row_values <- unlist(work[i, ], use.names = FALSE)
     row <- paste(mapply(function(value, width) {
@@ -349,7 +362,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     }, row_values, widths, USE.NAMES = FALSE), collapse = "  ")
     cat(row, "\n", sep = "")
   }
-
+  
   invisible(NULL)
 }
 
@@ -361,7 +374,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
       is.finite(model$I2)) {
     i2 <- max(0, as.numeric(model$I2) / 100)
   }
-
+  
   if (n <= 10L) {
     size_code <- "S"
     size_category <- "Small"
@@ -375,7 +388,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     size_category <- "Large"
     size_rule <- "K > 100"
   }
-
+  
   if (!is.finite(i2)) {
     heterogeneity_code <- NA_character_
     heterogeneity_category <- "Unknown"
@@ -401,7 +414,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     code <- paste0(size_code, heterogeneity_code)
     note <- ""
   }
-
+  
   list(
     code = code,
     n_studies = n,
@@ -431,11 +444,110 @@ print.pbias_result <- function(x, digits = 3, ...) {
   )
 }
 
+.method_feasible <- function(methods, bias_summary = NULL) {
+  if (length(methods) == 0) {
+    return(character(0))
+  }
+  if (is.null(bias_summary) || nrow(bias_summary) == 0 ||
+      !all(c("paper_method", "status") %in% names(bias_summary))) {
+    return(methods)
+  }
+  idx <- match(methods, bias_summary$paper_method)
+  methods[!is.na(idx) & bias_summary$status[idx] == "ok"]
+}
+
+.practical_decision_rule <- function(case, bias_summary = NULL) {
+  empty <- list(
+    observed_setting = "unavailable",
+    primary_methods = character(0),
+    alternative_methods = character(0),
+    marked_methods = character(0),
+    note = "I-squared is unavailable, so no practical decision-rule method was marked."
+  )
+  
+  if (is.null(case) || is.null(case$i2) || length(case$i2) != 1L ||
+      !is.finite(case$i2) || is.null(case$n_studies)) {
+    return(empty)
+  }
+  
+  if (case$i2 < 0.60) {
+    observed_setting <- "I-squared < 0.60"
+    primary_methods <- "TESS"
+    alternative_methods <- character(0)
+  } else if (case$n_studies <= 100L) {
+    observed_setting <- "I-squared >= 0.60 and K <= 100"
+    primary_methods <- "PSM3"
+    alternative_methods <- "TESS"
+  } else {
+    observed_setting <- "I-squared >= 0.60 and K > 100"
+    primary_methods <- c("CALI20", "CALI15")
+    alternative_methods <- "TESS"
+  }
+  
+  marked_methods <- .method_feasible(primary_methods, bias_summary)
+  note <- ""
+  if (length(marked_methods) == 0 && length(alternative_methods) > 0) {
+    marked_methods <- .method_feasible(alternative_methods, bias_summary)
+    if (length(marked_methods) > 0) {
+      note <- paste0(
+        "Primary recommendation not feasible in this run; marked alternative: ",
+        paste(marked_methods, collapse = ", "), "."
+      )
+    }
+  }
+  if (length(marked_methods) == 0) {
+    note <- "No recommended or alternative method was feasible in this run."
+  }
+  
+  list(
+    observed_setting = observed_setting,
+    primary_methods = primary_methods,
+    alternative_methods = alternative_methods,
+    marked_methods = marked_methods,
+    note = note
+  )
+}
+
+.format_decision_rule_value <- function(decision_rule) {
+  if (is.null(decision_rule) || is.null(decision_rule$observed_setting)) {
+    return("unavailable")
+  }
+  
+  primary <- if (length(decision_rule$primary_methods) > 0) {
+    paste(decision_rule$primary_methods, collapse = " or ")
+  } else {
+    "none"
+  }
+  alternative <- if (length(decision_rule$alternative_methods) > 0) {
+    paste0("; alternative: ", paste(decision_rule$alternative_methods, collapse = " or "))
+  } else {
+    ""
+  }
+  marked <- if (length(decision_rule$marked_methods) > 0) {
+    paste0("; marked with ***: ", paste(decision_rule$marked_methods, collapse = ", "))
+  } else {
+    "; marked with ***: none"
+  }
+  note <- if (!is.null(decision_rule$note) && nzchar(decision_rule$note)) {
+    paste0("; ", decision_rule$note)
+  } else {
+    ""
+  }
+  
+  paste0(
+    decision_rule$observed_setting,
+    "; recommended: ", primary,
+    alternative,
+    marked,
+    note
+  )
+}
+
 .type1_performance_table <- function(case_code = NULL) {
   if (is.null(case_code) || is.na(case_code)) {
     return(data.frame())
   }
-
+  
   path <- system.file("extdata", "type1_performance.csv", package = "pbiasr")
   if (!nzchar(path)) {
     local_path <- file.path("inst", "extdata", "type1_performance.csv")
@@ -446,7 +558,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (!nzchar(path) || !file.exists(path)) {
     return(.type1_performance_fallback(case_code))
   }
-
+  
   tab <- utils::read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
   num_cols <- setdiff(names(tab), c("case", "method"))
   for (nm in num_cols) {
@@ -470,7 +582,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 }
 
 .make_publication_table <- function(bias_summary, performance_rank = NULL,
-                                    sort_by_rank = TRUE, digits = 3) {
+                                    sort_by_rank = TRUE, digits = 3,
+                                    decision_rule = NULL,
+                                    recommendation_marker = "***") {
   pvalue <- mapply(
     .format_result_p,
     bias_summary$publication_bias_p,
@@ -484,6 +598,17 @@ print.pbias_result <- function(x, digits = 3, ...) {
     pvalue = pvalue,
     stringsAsFactors = FALSE,
     check.names = FALSE
+  )
+  methods_to_mark <- if (!is.null(decision_rule) &&
+                         length(decision_rule$marked_methods) > 0) {
+    decision_rule$marked_methods
+  } else {
+    character(0)
+  }
+  tab$method_display <- ifelse(
+    tab$method %in% methods_to_mark,
+    paste0(tab$method, recommendation_marker),
+    tab$method
   )
   
   if (!is.null(performance_rank) && nrow(performance_rank) > 0) {
@@ -506,7 +631,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     )
     
     tab <- data.frame(
-      Method = tab$method,
+      Method = tab$method_display,
       `P-value` = tab$pvalue,
       `Balanced Accuracy` = balanced_accuracy_text,
       `Logit Distance`= ldist_text,
@@ -520,7 +645,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     }
   } else {
     tab <- data.frame(
-      Method = tab$method,
+      Method = tab$method_display,
       `P-value` = tab$pvalue,
       `Balanced Accuracy` = "not available",
       `Logit Distance` = "not available",
@@ -556,7 +681,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
       )
     ))
   }
-
+  
   est <- rbind(
     .make_estimates("b0", mod$b[[1]], mod$se[[1]], mod$zval[[1]], mod$pval[[1]],
                     mod$ci.lb[[1]], mod$ci.ub[[1]]),
@@ -574,7 +699,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     error = function(e) NULL
   )
   if (is.null(mod)) return(.na_result("FE Egger model failed."))
-
+  
   est <- .make_estimates(
     term = c("b0", "se"),
     estimate = as.numeric(mod$b),
@@ -593,7 +718,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     error = function(e) NULL
   )
   if (is.null(mod)) return(.na_result("RE Egger model failed."))
-
+  
   est <- .make_estimates(
     term = c("b0", "se"),
     estimate = as.numeric(mod$b),
@@ -613,7 +738,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     error = function(e) NULL
   )
   if (is.null(mod)) return(.na_result("WLS Egger model failed."))
-
+  
   co <- summary(mod)$coefficients
   ci <- tryCatch(stats::confint(mod), error = function(e) matrix(NA_real_, nrow = 2, ncol = 2))
   est <- .make_estimates(
@@ -670,7 +795,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   }
   ans <- tryCatch(.MAIVE_EST(dt), error = function(e) NULL)
   if (is.null(ans)) return(.na_result("MAIVE model failed."))
-
+  
   co <- summary(ans$model)$coefficients
   ci <- tryCatch(stats::confint(ans$model), error = function(e) matrix(NA_real_, nrow = 2, ncol = 2))
   est <- .make_estimates(
@@ -691,7 +816,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   }
   ans <- tryCatch(.MAIVE2_EST(dt), error = function(e) NULL)
   if (is.null(ans)) return(.na_result("FATIV model failed."))
-
+  
   co <- summary(ans$model)$coefficients
   ci <- tryCatch(stats::confint(ans$model), error = function(e) matrix(NA_real_, nrow = 2, ncol = 2))
   est <- .make_estimates(
@@ -714,7 +839,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     metafor::selmodel(myRE, type = "stepfun", steps = c(0.025, 1))
   }, error = function(e) NULL)
   if (is.null(psm3)) return(.na_result("3PSM failed or did not converge."))
-
+  
   cv.025 <- stats::qnorm(0.975) * dt$se
   est <- c(psm3$tau2[1], psm3$beta[1], psm3$delta[2])
   se <- c(psm3$se.tau2, psm3$se, psm3$se.delta[2])
@@ -740,16 +865,16 @@ print.pbias_result <- function(x, digits = 3, ...) {
     metafor::selmodel(myRE, type = "stepfun", steps = c(0.025, 0.5, 1))
   }, error = function(e) NULL)
   if (is.null(psm4)) return(.na_result("4PSM failed or did not converge."))
-
+  
   cv.025 <- stats::qnorm(0.975) * dt$se
   est <- c(psm4$tau2[1], psm4$beta[1], psm4$delta[2], psm4$delta[3])
   se <- c(psm4$se.tau2, psm4$se, psm4$se.delta[2], psm4$se.delta[3])
-
+  
   sig.plus <- stats::pnorm(cv.025, est[2], sqrt(est[1] + dt$se^2), lower.tail = FALSE)
   nonsig.plus <- stats::pnorm(0, est[2], sqrt(est[1] + dt$se^2), lower.tail = FALSE) - sig.plus
   minus <- stats::pnorm(0, est[2], sqrt(est[1] + dt$se^2), lower.tail = TRUE)
   pub.sel.4psm <- mean(sig.plus + est[3] * nonsig.plus + est[4] * minus)
-
+  
   out <- .make_estimates(
     term = c("tau2", "b0", "pr.nonsig", "pr.opposite", "pubSelRate"),
     estimate = c(est, pub.sel.4psm),
@@ -777,7 +902,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     err <- mydata[, 2] - Coeff
     esthat <- Coeff
   }
-
+  
   se <- mydata[, 3]
   t <- mydata[, 2] / mydata[, 3]
   cutoffs <- c(-1.96, 1.96)
@@ -814,7 +939,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     err <- mydata[, 2] - Coeff
     esthat <- Coeff
   }
-
+  
   se <- mydata[, 3]
   t <- mydata[, 2] / mydata[, 3]
   cutoffs <- c(-1.96, 0, 1.96)
@@ -829,7 +954,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     prob_vupper <- 1 - prob_vlow - prob_low - prob_upper
     meanbeta[i] <- beta1 * prob_vlow + beta2 * prob_low + beta3 * prob_upper + 1 * prob_vupper
   }
-
+  
   fX <- stats::dnorm(err, 0, sqrt(se^2 + tauhat))
   L <- (phat / meanbeta) * fX
   logL <- log(L)
@@ -857,7 +982,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (is.null(Result) || Result$convergence == 1) {
     return(.na_result("AK1 failed or did not converge."))
   }
-
+  
   se_vec <- tryCatch(
     diag(sqrt(MASS::ginv(numDeriv::hessian(fn, Result$par), tol = 10^(-30)))),
     error = function(e) rep(NA_real_, length(Result$par))
@@ -874,7 +999,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   tau2_est <- estcoef[1]
   tau2_se <- se_vec[1]
   AK1LLK <- .AK1logLik(Result$par, AKdata, "est")
-
+  
   re_mod <- tryCatch(metafor::rma(dt$eff, dt$se^2, method = "ML"), error = function(e) NULL)
   RE_LLK <- if (is.null(re_mod)) NA_real_ else as.numeric(logLik(re_mod, REML = FALSE))
   cv.025 <- stats::qnorm(0.975) * dt$se
@@ -890,7 +1015,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     pLRT <- NA_real_
     pub.sel <- NA_real_
   }
-
+  
   est <- rbind(
     .make_estimates("b0", b0_est, b0_se, b0_est / b0_se,
                     stats::dt(b0_est / b0_se, df = nrow(AKdata) - length(estcoef)),
@@ -919,7 +1044,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (is.null(Result) || Result$convergence == 1) {
     return(.na_result("AK2 failed or did not converge."))
   }
-
+  
   se_vec <- tryCatch(
     diag(sqrt(MASS::ginv(numDeriv::hessian(fn, Result$par), tol = 10^(-30)))),
     error = function(e) rep(NA_real_, length(Result$par))
@@ -928,7 +1053,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (any(!is.finite(se_vec))) {
     return(.na_result("AK2 Hessian inversion failed."))
   }
-
+  
   crit <- stats::qt(0.975, df = (nrow(AKdata) - length(estcoef)))
   tau2_est <- estcoef[1]; tau2_se <- se_vec[1]
   rho1_est <- estcoef[2]; rho1_se <- se_vec[2]
@@ -936,7 +1061,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   rho3_est <- estcoef[4]; rho3_se <- se_vec[4]
   b0_est <- estcoef[5]; b0_se <- se_vec[5]
   AK2LLK <- .AK2logLik(Result$par, AKdata, "est")
-
+  
   re_mod <- tryCatch(metafor::rma(dt$eff, dt$se^2, method = "ML"), error = function(e) NULL)
   RE_LLK <- if (is.null(re_mod)) NA_real_ else as.numeric(logLik(re_mod, REML = FALSE))
   cv.025 <- stats::qnorm(0.975) * dt$se
@@ -951,7 +1076,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     pLRT <- NA_real_
     pub.sel <- NA_real_
   }
-
+  
   est <- rbind(
     .make_estimates("b0", b0_est, b0_se, b0_est / b0_se,
                     stats::dt(b0_est / b0_se, df = nrow(AKdata) - length(estcoef)),
@@ -991,9 +1116,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
     EKConf <- stats::confint(reg)
     list(EKreg = EKreg, EKConf = EKConf)
   }, error = function(e) NULL)
-
+  
   if (is.null(out) || any(is.na(out$EKConf))) return(.na_result("EK failed."))
-
+  
   est <- .make_estimates(
     term = c("b0", "g"),
     estimate = as.numeric(out$EKreg[, 1]),
@@ -1024,7 +1149,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     pval.tes <- ifelse(pval.tes < 0.5, pval.tes * 2, (1 - pval.tes) * 2)
     list(A = A, pval.tes = pval.tes, O = O, E = E, n = n)
   }, error = function(e) NULL)
-
+  
   if (is.null(out)) return(.na_result("TES failed."))
   list(estimates = NULL, pub_bias_p = out$pval.tes, status = "ok", note = "")
 }
@@ -1054,7 +1179,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
       tess_z = TESS
     )
   }, error = function(e) NULL)
-
+  
   if (is.null(out)) {
     return(list(psst_p = NA_real_, tess_p = NA_real_, status = "failed", note = "PSST/TESS failed."))
   }
@@ -1113,7 +1238,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     combined.pval <- 1 - (1 - min(c(reg.pval, skewness.pval)))^2
     list(skewness.pval = skewness.pval, combined.pval = combined.pval)
   }, error = function(e) NULL)
-
+  
   if (is.null(out)) {
     return(list(skew_p = NA_real_, combined_p = NA_real_, status = "failed", note = "Skewness tests failed."))
   }
@@ -1130,7 +1255,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   notes <- character(length(windows))
   pvals <- numeric(length(windows))
   status <- character(length(windows))
-
+  
   for (i in seq_along(windows)) {
     w <- windows[i]
     over <- sum(zcrit < abtstat & abtstat < zcrit * (1 + w))
@@ -1146,7 +1271,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
       notes[i] <- paste0("Counts: over=", over, ", under=", under)
     }
   }
-
+  
   list(summary = data.frame(
     code_method = code_methods,
     publication_bias_p = pvals,

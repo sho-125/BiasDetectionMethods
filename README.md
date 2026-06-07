@@ -61,7 +61,7 @@ remotes::install_local("pbiasr")
 Or from a local tarball:
 
 ```r
-install.packages("pbiasr_0.2.7.tar.gz", repos = NULL, type = "source")
+install.packages("pbiasr_0.2.8.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
