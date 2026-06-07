@@ -12,7 +12,11 @@
 #'   tests. The core implementations follow the uploaded code and paper, which use
 #'   0.05 by default.
 #' @param sort_by_rank Logical. If \code{TRUE}, sort the displayed publication-bias
-#'   results by the Balanced Accuracy ranking for the detected paper case.
+#'   results by the selected ranking metric for the detected paper case.
+#' @param ranking_metric Character. Ranking metric used to sort the displayed
+#'   publication-bias results when \code{sort_by_rank = TRUE}. Use
+#'   \code{"logit_distance"} (default) or \code{"balanced_accuracy"}.
+#'   Short aliases \code{"ldist"} and \code{"ba"} are also accepted.
 #'
 #' @return An object of class \code{pbias_result} with elements:
 #'   \itemize{
@@ -32,8 +36,10 @@
 #'
 #' @export
 pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
-                        sort_by_rank = TRUE) {
-  .validate_inputs(yi, sei, obs, study_id, alpha, sort_by_rank)
+                        sort_by_rank = TRUE,
+                        ranking_metric = c("logit_distance", "balanced_accuracy")) {
+  ranking_metric <- .match_ranking_metric(ranking_metric)
+  .validate_inputs(yi, sei, obs, study_id, alpha, sort_by_rank, ranking_metric)
   
   n <- length(yi)
   if (is.null(study_id)) {
@@ -155,6 +161,7 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
       bias_summary,
       performance_rank = performance_rank,
       sort_by_rank = sort_by_rank,
+      ranking_metric = ranking_metric,
       decision_rule = decision_rule
     ),
     decision_rule = decision_rule,
@@ -168,7 +175,8 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
       has_obs = !is.null(obs),
       alpha = alpha,
       sort_by_rank = sort_by_rank,
-      ranking_metric = "Balanced Accuracy",
+      ranking_metric = ranking_metric,
+      ranking_metric_label = .ranking_metric_label(ranking_metric),
       performance_source = "Performance tables from the publication bias paper",
       recommendation_marker = "***",
       timestamp = Sys.time()
@@ -183,7 +191,17 @@ print.pbias_result <- function(x, digits = 3, ...) {
   cat("\n")
   cat("Bias Test Results\n")
   cat("=============================\n")
-  cat("Caution: These recommendations are derived from simulated meta-analyses based on the experimental conditions in Carter et al. (2019). Rankings reflect Balanced Accuracy in those simulations, not universal method performance, and should be applied with care because bias-detection tests may behave differently in real meta-analytic applications.\n\n")
+  ranking_metric <- if (!is.null(x$meta$ranking_metric)) {
+    x$meta$ranking_metric
+  } else {
+    "logit_distance"
+  }
+  ranking_label <- .ranking_metric_label(ranking_metric)
+  cat(paste0(
+    "Caution: These recommendations are derived from simulated meta-analyses based on the experimental conditions in Carter et al. (2019). ",
+    "Rankings reflect ", ranking_label, " in those simulations, not universal method performance, ",
+    "and should be applied with care because bias-detection tests may behave differently in real meta-analytic applications.\n\n"
+  ))
   cat("Null hypothesis: no bias\n")
   cat("\n")
   cat("Studies       : ", x$meta$n_studies, "\n", sep = "")
@@ -196,8 +214,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
     cat("Decision rule : ", .format_decision_rule_value(x$decision_rule), "\n", sep = "")
   }
   cat("\n")
-  cat("Ranked by Balanced Accuracy\n")
-  cat("---------------------------\n")
+  ranking_title <- paste0("Ranked by ", ranking_label)
+  cat(ranking_title, "\n", sep = "")
+  cat(paste(rep("-", nchar(ranking_title)), collapse = ""), "\n", sep = "")
   .print_publication_table(x$publication_table)
   cat("\n")
   cat("-----\n")
@@ -231,7 +250,8 @@ print.pbias_result <- function(x, digits = 3, ...) {
   )
 }
 
-.validate_inputs <- function(yi, sei, obs, study_id, alpha, sort_by_rank) {
+.validate_inputs <- function(yi, sei, obs, study_id, alpha, sort_by_rank,
+                             ranking_metric) {
   if (!is.numeric(yi) || !is.numeric(sei)) {
     stop("`yi` and `sei` must be numeric vectors.")
   }
@@ -260,6 +280,10 @@ print.pbias_result <- function(x, digits = 3, ...) {
   }
   if (!is.logical(sort_by_rank) || length(sort_by_rank) != 1L || is.na(sort_by_rank)) {
     stop("`sort_by_rank` must be TRUE or FALSE.")
+  }
+  if (!is.character(ranking_metric) || length(ranking_metric) != 1L ||
+      !(ranking_metric %in% c("logit_distance", "balanced_accuracy"))) {
+    stop("`ranking_metric` must be 'logit_distance' or 'balanced_accuracy'.")
   }
 }
 
@@ -303,6 +327,32 @@ print.pbias_result <- function(x, digits = 3, ...) {
   ""
 }
 
+.match_ranking_metric <- function(ranking_metric) {
+  if (length(ranking_metric) > 1L) {
+    ranking_metric <- ranking_metric[1L]
+  }
+  if (!is.character(ranking_metric) || length(ranking_metric) != 1L ||
+      is.na(ranking_metric)) {
+    stop("`ranking_metric` must be 'logit_distance' or 'balanced_accuracy'.")
+  }
+  metric <- tolower(gsub("[ -]+", "_", ranking_metric))
+  if (metric %in% c("logit_distance", "logit", "distance", "ldist")) {
+    return("logit_distance")
+  }
+  if (metric %in% c("balanced_accuracy", "balanced", "ba")) {
+    return("balanced_accuracy")
+  }
+  stop("`ranking_metric` must be 'logit_distance' or 'balanced_accuracy'.")
+}
+
+.ranking_metric_label <- function(ranking_metric) {
+  metric <- .match_ranking_metric(ranking_metric)
+  if (identical(metric, "balanced_accuracy")) {
+    return("Balanced Accuracy")
+  }
+  "Logit Distance"
+}
+
 .format_output_note <- function(x) {
   case_code <- x$case$code
   
@@ -310,6 +360,18 @@ print.pbias_result <- function(x, digits = 3, ...) {
     paste0("case ", case_code)
   } else {
     "the detected paper case"
+  }
+  
+  ranking_metric <- if (!is.null(x$meta$ranking_metric)) {
+    x$meta$ranking_metric
+  } else {
+    "logit_distance"
+  }
+  ranking_label <- .ranking_metric_label(ranking_metric)
+  ranking_hint <- if (identical(ranking_metric, "balanced_accuracy")) {
+    "Use ranking_metric = \"logit_distance\" to sort by Logit Distance instead."
+  } else {
+    "Use ranking_metric = \"balanced_accuracy\" to sort by Balanced Accuracy instead."
   }
   
   paste(
@@ -320,7 +382,8 @@ print.pbias_result <- function(x, digits = 3, ...) {
       case_text,
       "."
     ),
-    "Rows are sorted by Balanced Accuracy when sort_by_rank = TRUE.",
+    paste0("Rows are sorted by ", ranking_label, " when sort_by_rank = TRUE."),
+    ranking_hint,
     "A small p-value indicates evidence of bias.",
     if (!is.null(x$decision_rule) && length(x$decision_rule$marked_methods) > 0) {
       "*** marks the method recommended by the practical decision rule for the observed setting."
@@ -575,16 +638,24 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (is.null(tab) || nrow(tab) == 0) {
     return(data.frame())
   }
-  tab$rank <- as.integer(rank(-tab$balanced_accuracy, ties.method = "min"))
+  tab$ba_rank <- as.integer(rank(-tab$balanced_accuracy, ties.method = "min"))
+  tab$ldist_rank <- as.integer(rank(-tab$ldist, ties.method = "min"))
+  
+  # Keep `rank` for backwards compatibility with older code. It remains the
+  # Balanced Accuracy rank; display sorting is controlled by `ranking_metric`.
+  tab$rank <- tab$ba_rank
   tab <- tab[order(tab$rank, tab$false_positive, tab$method), , drop = FALSE]
-  tab[, c("case", "rank", "method", "true_positive", "false_positive",
-          "precision", "sensitivity", "f1", "balanced_accuracy", "inv_fpr", "ldist")]
+  tab[, c("case", "rank", "ba_rank", "ldist_rank", "method", "true_positive",
+          "false_positive", "precision", "sensitivity", "f1",
+          "balanced_accuracy", "inv_fpr", "ldist")]
 }
 
 .make_publication_table <- function(bias_summary, performance_rank = NULL,
                                     sort_by_rank = TRUE, digits = 3,
+                                    ranking_metric = "logit_distance",
                                     decision_rule = NULL,
                                     recommendation_marker = "***") {
+  ranking_metric <- .match_ranking_metric(ranking_metric)
   pvalue <- mapply(
     .format_result_p,
     bias_summary$publication_bias_p,
@@ -614,8 +685,6 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (!is.null(performance_rank) && nrow(performance_rank) > 0) {
     idx <- match(tab$method, performance_rank$method)
     
-    rank <- performance_rank$rank[idx]
-    
     balanced_accuracy <- performance_rank$balanced_accuracy[idx]
     balanced_accuracy_text <- ifelse(
       is.na(balanced_accuracy),
@@ -630,6 +699,13 @@ print.pbias_result <- function(x, digits = 3, ...) {
       .format_num(ldist, digits)
     )
     
+    false_positive <- performance_rank$false_positive[idx]
+    sort_metric_value <- if (identical(ranking_metric, "balanced_accuracy")) {
+      balanced_accuracy
+    } else {
+      ldist
+    }
+    
     tab <- data.frame(
       Method = tab$method_display,
       `P-value` = tab$pvalue,
@@ -640,8 +716,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
     )
     
     if (isTRUE(sort_by_rank)) {
-      order_key <- ifelse(is.na(rank), Inf, rank)
-      tab <- tab[order(order_key, seq_len(nrow(tab))), , drop = FALSE]
+      order_key <- ifelse(is.na(sort_metric_value), Inf, -sort_metric_value)
+      false_positive_key <- ifelse(is.na(false_positive), Inf, false_positive)
+      tab <- tab[order(order_key, false_positive_key, seq_len(nrow(tab))), , drop = FALSE]
     }
   } else {
     tab <- data.frame(

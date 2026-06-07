@@ -166,6 +166,8 @@ remotes::install_github(
 # Load package
 library(pbiasr)
 sample_data1 <- pbias_sample_data(1)
+#sample_data1 <- rbind.data.frame(sample_data1,sample_data1,sample_data1)
+#sample_data1$eff <- runif(nrow(sample_data1), 0.5, 2.0)*sample_data1$eff
 out1 <- pbias_table(
   yi = sample_data1$eff,
   sei = sample_data1$se,
