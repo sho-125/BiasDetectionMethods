@@ -35,7 +35,9 @@ Only `"none"` is supported. Pooling before matching is no longer performed.}
 independently of QRP. Selecting All keeps all three Censoring levels separate.}
 }
 \value{
-A `pbias_closest_result` with `matches` (full individual conditions),
+A `pbias_closest_result` with `matches` (full individual conditions,
+  including `bias`, an explicit QRP/Censoring label such as
+  `QRP = None & Censoring = High`),
   `performance` (21 numeric method results per match), `summary` (method
   comparison after selection, sorted by Balanced Accuracy), `candidates`
   (eligible individual conditions), `notes`, and `meta` (inputs, searched K

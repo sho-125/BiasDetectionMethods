@@ -1,3 +1,8 @@
+# pbiasr 0.4.1
+
+- Replaced the generic Role column in printed closest-condition results with Bias, stating the exact QRP and Censoring levels (for example, `QRP = None & Censoring = High`). The explicit label is also available as `matches$bias` and `candidates$bias`.
+- Matching, classifications, test results and performance calculations are unchanged.
+
 # pbiasr 0.4.0
 
 - Corrected closest-condition selection: all eligible individual conditions remain separate (864 Extended or 432 Original with All filters). K is matched first, then within-condition mean estimated tau.

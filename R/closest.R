@@ -42,7 +42,9 @@
 #'   Mean rejection rate and applicability give equal weight to all matches.
 #'   Low applicability is reported separately.
 #'
-#' @return A `pbias_closest_result` with `matches` (full individual conditions),
+#' @return A `pbias_closest_result` with `matches` (full individual conditions,
+#'   including `bias`, an explicit QRP/Censoring label such as
+#'   `QRP = None & Censoring = High`),
 #'   `performance` (21 numeric method results per match), `summary` (method
 #'   comparison after selection, sorted by Balanced Accuracy), `candidates`
 #'   (eligible individual conditions), `notes`, and `meta` (inputs, searched K
@@ -71,6 +73,9 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
   if (pooling != "none") stop("Censoring pooling before matching is no longer supported. Omit pooling or use pooling = 'none'.", call. = FALSE)
   data <- readRDS(.pbias_extdata_file("closest_conditions.rds"))
   candidates <- data$conditions
+  bias_levels <- c(none = "None", med = "Medium", high = "High")
+  candidates$bias <- paste0("QRP = ", unname(bias_levels[candidates$QRP]),
+                            " & Censoring = ", unname(bias_levels[candidates$Censor]))
   candidates$profile_id <- paste0("condition-", candidates$Environment)
   candidates$n_conditions <- 1L
   candidates$n_unbiased_conditions <- as.integer(!candidates$biased)
@@ -119,7 +124,7 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
   }
   structure(list(matches = matches, performance = perf, summary = summary, candidates = candidates, notes = notes,
     meta = c(list(k = k, tau = tau, design = design, qrp = qrp, universe = universe, pooling = "none",
-                  censoring = censoring, package_version = "0.4.0", n_candidates = nrow(candidates),
+                  censoring = censoring, package_version = "0.4.1", n_candidates = nrow(candidates),
                   searched_k = searched_k, searched_counts = stats::setNames(as.integer(searched_counts), searched_k),
                   n_searched = sum(searched_counts),
                   summary_weighting = "Mean TPR across selected biased conditions; mean FPR across selected unbiased conditions; equal weight per class; complete rates required",
@@ -167,7 +172,7 @@ print.pbias_closest_result <- function(x, ...) {
   cat(sprintf("%s eligible conditions; %s searched at K = %s.\n", x$meta$n_candidates, x$meta$n_searched, paste(x$meta$searched_k, collapse = ", ")))
   m <- x$matches
   print(data.frame(Match = m$match_id, K = m$K, Mean_tau = round(m$mean_tau, 6), Mean_tau2 = round(m$mean_tau2, 6),
-                   QRP = m$QRP, Censoring = m$Censor, Role = m$role), row.names = FALSE)
+                   Bias = m$bias), row.names = FALSE)
   s <- x$summary
   pct <- function(z) ifelse(is.finite(z), sprintf("%.1f%%", 100*z), "n/a")
   cat("\nDescriptive performance across the selected conditions:\n")

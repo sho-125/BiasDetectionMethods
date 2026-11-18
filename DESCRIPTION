@@ -1,7 +1,7 @@
 Package: pbiasr
 Type: Package
 Title: Publication Bias Testing for Meta-Analysis
-Version: 0.4.0
+Version: 0.4.1
 Authors@R: person(given = "OpenAI", family = "Assistant", role = c("aut", "cre"), email = "noreply@example.com")
 Description: Runs a unified set of publication-bias tests for meta-analysis and returns
     raw machine-readable publication-bias results together with a formatted display

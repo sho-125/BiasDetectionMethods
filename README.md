@@ -67,7 +67,7 @@ remotes::install_local("pbiasr")
 Or from a local tarball:
 
 ```r
-install.packages("pbiasr_0.4.0.tar.gz", repos = NULL, type = "source")
+install.packages("pbiasr_0.4.1.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
@@ -175,7 +175,7 @@ The default sort is Logit Distance. Use `ranking_metric = "balanced_accuracy"` t
 TES uses the reference right-tail alpha of 0.025 when `alpha = 0.05`. Default caliper windows reproduce the literal 1.96-centered boundaries in the simulation code (for example CALI05 uses 1.86-1.96 and 1.96-2.06), including the five-observation applicability rule.
 
 
-## Closest individual simulation conditions (0.4.0)
+## Closest individual simulation conditions (0.4.1)
 
 ```r
 near <- pbias_closest(k = 65, tau = 0.2)
@@ -199,13 +199,13 @@ QRP and Censoring filters independently accept `without` (none), `with` (medium/
 
 ```r
 near <- pbias_closest(65, 0.2, qrp = "all", censoring = "all")
-near$matches     # four separate neighbours, with roles and full settings
+near$matches     # four separate neighbours, with explicit QRP/Censoring labels and full settings
 near$performance # 21 methods per condition: TPR or FPR and applicability
 near$summary     # descriptive performance AFTER selecting neighbours
 ```
 
 A condition is biased when QRP or Censoring is medium/high. A biased condition supplies TPR; an unbiased condition supplies FPR. Individual-condition BA is unavailable. After selecting neighbours, summary mean TPR averages the biased conditions' rates and mean FPR averages the unbiased conditions' rates. **BA = (mean TPR + 1 - mean FPR) / 2**. Each class gets half the weight, and conditions within a class receive equal weight. Both classes and a valid rate in every selected condition are required; missing results are not filled with zero. This describes the selected simulation neighbours and is not an interpolated prediction for the user's meta-analysis. Applicability and missing-result coverage are retained.
 
-If only one class is selected, BA remains `NA` and mean rejection rates remain available. Hover and CSV exports identify every condition's role and its TPR/FPR contribution. Low applicability is flagged separately. The Shiny app uses this same package function.
+If only one class is selected, BA remains `NA` and mean rejection rates remain available. Hover and CSV exports identify every condition's QRP/Censoring levels and its TPR/FPR contribution. Low applicability is flagged separately. The Shiny app uses this same package function.
 
 `pooling = "none"` is the only supported selection mode; older requests for `pooling = "publication_bias"` fail clearly rather than silently changing the search. The legacy `universe` filter is still supported. Raw test corrections from 0.2.9 remain in place.
