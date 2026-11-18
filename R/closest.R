@@ -10,19 +10,23 @@
 #'   deviation. If you have estimated tau-squared, supply `sqrt(tau2)`.
 #' @param design `"extended"` (864 conditions, K = 5 to 800) or `"original"`
 #'   (432 conditions, K = 10 to 100, based on Carter et al., 2019).
-#' @param qrp `"without"` for no p-hacking, `"with"` for medium/high p-hacking,
+#' @param qrp `"without"` for QRP none, `"with"` for QRP medium/high,
 #'   or `"all"` for all three QRP levels. Levels remain separate.
-#' @param universe `"all"` (default) includes all conditions. `"pb_only"`
+#' @param universe Legacy advanced filter, retained for compatibility.
+#'   `"all"` (default) includes all conditions. `"pb_only"`
 #'   includes any biased condition: medium/high censoring OR medium/high QRP,
 #'   including QRP-only conditions without censoring.
-#' @param pooling `"publication_bias"` (default) holds K, true effect, population
-#'   tau and QRP fixed and averages eligible censoring levels equally. All uses
-#'   all three censoring levels. PB-only uses two at QRP none and all three at
-#'   positive QRP, since those conditions are all biased. Both universes have
-#'   the same groups. `"none"` retains full individual conditions.
-#'   Each condition's mean tau averages valid estimates among its 1,000
-#'   replications; `n_tau` records the count. `mean_tau2` is the average estimated
-#'   variance, not the square of `mean_tau`.
+#' @param pooling Legacy advanced aggregation option, retained for existing
+#'   scripts. The default `"publication_bias"` groups the selected conditions
+#'   by K, true effect, population tau and QRP, averaging eligible Censoring
+#'   levels equally. `"none"` retains full individual conditions.
+#'   Within each condition, mean tau uses valid estimates among its 1,000
+#'   replications; `n_tau` records their count. `mean_tau2` is the average
+#'   estimated variance, not the square of `mean_tau`.
+#' @param censoring `"all"` (default) includes Censoring none/medium/high,
+#'   `"without"` includes none, and `"with"` includes medium/high. This filter
+#'   is independent of QRP. Grouped results automatically average the selected
+#'   Censoring levels while keeping QRP levels separate.
 #'
 #' @details If K was simulated, only that K is searched. Otherwise the nearest K
 #'   below and above are searched separately. At each K, the closest mean tau
@@ -56,11 +60,12 @@
 #' near
 #' head(near$performance)
 #' # If your estimate is tau-squared = 0.04:
-#' pbias_closest(k = 60, tau = sqrt(0.04), universe = "all")
+#' pbias_closest(k = 60, tau = sqrt(0.04), censoring = "all")
 pbias_closest <- function(k, tau, design = c("extended", "original"),
                           qrp = c("all", "without", "with"),
                           universe = c("all", "pb_only"),
-                          pooling = c("publication_bias", "none")) {
+                          pooling = c("publication_bias", "none"),
+                          censoring = c("all", "without", "with")) {
   if (!is.numeric(k) || length(k) != 1L || !is.finite(k) || k < 3 || k != floor(k)) {
     stop("k must be one finite whole number of studies, at least 3.", call. = FALSE)
   }
@@ -71,6 +76,7 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
   qrp <- match.arg(qrp)
   universe <- match.arg(universe)
   pooling <- match.arg(pooling)
+  censoring <- match.arg(censoring)
   data <- readRDS(.pbias_extdata_file("closest_conditions.rds"))
   if (pooling == "none") {
     candidates <- data$conditions
@@ -79,6 +85,8 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
     candidates$n_unbiased_conditions <- as.integer(!candidates$biased)
     candidates$n_biased_conditions <- as.integer(candidates$biased)
     if (universe == "pb_only") candidates <- candidates[candidates$biased, , drop = FALSE]
+    if (censoring == "without") candidates <- candidates[candidates$Censor == "none", , drop = FALSE]
+    if (censoring == "with") candidates <- candidates[candidates$Censor != "none", , drop = FALSE]
     performance <- data$condition_performance
     performance$profile_id <- paste0("condition-", performance$Environment)
     index <- match(performance$Environment, data$conditions$Environment)
@@ -90,15 +98,14 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
     performance$fpr <- ifelse(!biased, performance$rate, NA_real_)
     performance$balanced_accuracy <- NA_real_
   } else {
-    candidates <- data$profiles[data$profiles$universe == universe, , drop = FALSE]
-    candidates$Censor <- ifelse(universe == "pb_only" & candidates$QRP == "none",
-                                 "med/high pooled", "none/med/high pooled")
+    candidates <- data$profiles[data$profiles$universe == universe & data$profiles$censoring == censoring, , drop = FALSE]
     candidates$Environment <- NA_integer_
     performance <- data$performance
   }
   if (design == "original") candidates <- candidates[candidates$K >= 10 & candidates$K <= 100, , drop = FALSE]
   if (qrp == "without") candidates <- candidates[candidates$QRP == "none", , drop = FALSE]
   if (qrp == "with") candidates <- candidates[candidates$QRP != "none", , drop = FALSE]
+  if (!nrow(candidates)) stop("No simulation conditions match these filters. Use universe = 'all' to include unbiased conditions.", call. = FALSE)
   candidates <- candidates[order(candidates$K, candidates$mean_tau, candidates$profile_id), , drop = FALSE]
   rownames(candidates) <- NULL
   matches <- .pbias_bracket(candidates, k, tau)
@@ -127,7 +134,7 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
   }
   structure(list(matches = matches, performance = perf, summary = summary, candidates = candidates, notes = notes,
                  meta = c(list(k = k, tau = tau, design = design, qrp = qrp, universe = universe,
-                               pooling = pooling, package_version = "0.3.1",
+                               pooling = pooling, censoring = censoring, package_version = "0.3.2",
                                summary_weighting = "Equal weight per match; all matches must have a valid metric"), data$metadata)),
             class = "pbias_closest_result")
 }
@@ -169,8 +176,10 @@ print.pbias_closest_result <- function(x, ...) {
   cat("Closest simulation conditions\n")
   cat(sprintf("K = %s; estimated tau = %.6g; tau-squared = %.6g\n",
               x$meta$k, x$meta$tau, x$meta$tau^2))
-  cat(sprintf("%s design | %s QRP | %s universe | %s pooling\n",
-              x$meta$design, x$meta$qrp, x$meta$universe, x$meta$pooling))
+  cat(sprintf("%s design | QRP: %s | Censoring: %s\n",
+              x$meta$design, x$meta$qrp, x$meta$censoring))
+  if (x$meta$universe != "all") cat("Additional legacy filter: biased conditions only (QRP or Censoring).\n")
+  if (x$meta$pooling == "none") cat("Legacy individual-condition output.\n")
   m <- x$matches
   print(data.frame(Match = m$match_id, K = m$K, Mean_tau = round(m$mean_tau, 6),
                    Mean_tau2 = round(m$mean_tau2, 6),

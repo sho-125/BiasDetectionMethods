@@ -1,3 +1,10 @@
+# pbiasr 0.3.2
+
+- Added an independent `censoring` filter with `without`, `with` and `all`, alongside the same three QRP options.
+- The standard workflow always groups the selected Censoring levels. Shiny no longer asks users to choose a condition-summary mode.
+- QRP-only conditions continue to count as biased. Censoring filters select actual Censoring levels, independently of that classification.
+- Retained legacy `universe` and `pooling` arguments for existing R scripts. Console output and app exports use QRP and Censoring terminology.
+
 # pbiasr 0.3.1
 
 - Closest lookup now defaults to Extended / all QRP / All conditions / pooled censoring levels.

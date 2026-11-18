@@ -80,7 +80,7 @@ test_that("optional pooling is explicit and matches independent component averag
     expect_equal(result$n_valid, sum(raw$n_valid))
   }
   expect_true(all(is.na(pb$performance$fpr)))
-  expect_output(print(pb), "publication_bias pooling")
+  expect_output(print(pb), "Censoring: all")
   expect_output(print(pbias_closest(65, 0.2)), "Mean_tau2")
   expect_length(pbias_closest(1000, 10)$notes, 2L)
 })
@@ -133,4 +133,40 @@ test_that("summary gives equal match weights and never fills missing BA", {
   expect_equal(s$mean_rejection_rate, c(.3, .7, .4))
   expect_equal(s$ba_available, c(2L, 2L, 1L))
   expect_equal(s$low_applicability_matches, c(0L, 1L, 0L))
+})
+
+
+test_that("independent QRP and Censoring filters use exactly the requested components", {
+  data <- readRDS(system.file("extdata", "closest_conditions.rds", package = "pbiasr"))
+  for (design in c("original", "extended")) {
+    for (qrp in c("without", "with", "all")) {
+      for (censoring in c("without", "with", "all")) {
+        x <- pbias_closest(65, .2, design = design, qrp = qrp, censoring = censoring)
+        expect_equal(x$meta$censoring, censoring)
+        expect_equal(unique(x$candidates$n_conditions), switch(censoring, without = 1L, with = 2L, all = 3L))
+        expect_equal(nrow(x$candidates), (if (design == "original") 144L else 288L) * switch(qrp, without = 1/3, with = 2/3, all = 1))
+        for (i in seq_len(nrow(x$matches))) {
+          m <- x$matches[i, ]
+          parts <- data$conditions[data$conditions$base_id == m$base_id, ]
+          if (censoring == "without") parts <- parts[parts$Censor == "none", ]
+          if (censoring == "with") parts <- parts[parts$Censor != "none", ]
+          expect_equal(m$mean_tau, mean(parts$mean_tau), tolerance = 1e-14)
+          expect_equal(m$mean_tau2, mean(parts$mean_tau2), tolerance = 1e-14)
+          expect_equal(m$n_biased_conditions, sum(parts$biased))
+          expect_equal(m$n_unbiased_conditions, sum(!parts$biased))
+          raw <- subset(data$condition_performance, Environment %in% parts$Environment & method == "BEGG")
+          actual <- subset(x$performance, match_id == m$match_id & method == "BEGG")
+          expect_equal(actual$rejection_rate, mean(raw$rate), tolerance = 1e-14)
+        }
+      }
+    }
+  }
+  qrp_only <- pbias_closest(65, .2, qrp = "with", censoring = "without")
+  expect_true(all(qrp_only$candidates$n_biased_conditions == 1))
+  expect_true(all(qrp_only$candidates$n_unbiased_conditions == 0))
+  expect_true(all(is.na(qrp_only$performance$balanced_accuracy)))
+  control <- pbias_closest(65, .2, qrp = "without", censoring = "without")
+  expect_true(all(control$candidates$n_unbiased_conditions == 1))
+  expect_error(pbias_closest(65, .2, censoring = "invalid"), "arg")
+  expect_error(pbias_closest(65, .2, qrp = "without", censoring = "without", universe = "pb_only"), "No simulation conditions")
 })

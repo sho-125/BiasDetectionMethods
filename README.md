@@ -67,7 +67,7 @@ remotes::install_local("pbiasr")
 Or from a local tarball:
 
 ```r
-install.packages("pbiasr_0.3.1.tar.gz", repos = NULL, type = "source")
+install.packages("pbiasr_0.3.2.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
@@ -185,22 +185,28 @@ near$performance           # all 21 methods for each match, as numeric data
 near$matches               # the full experimental settings
 
 # If your heterogeneity estimate is a variance, convert it to tau:
-pbias_closest(k = 65, tau = sqrt(0.04), universe = "all")
+pbias_closest(k = 65, tau = sqrt(0.04), censoring = "all")
 
 # Restrict to the original design and medium/high p-hacking:
 pbias_closest(k = 30, tau = 0.2, design = "original", qrp = "with")
 ```
 
-The defaults are **Extended / all QRP levels / All conditions / pooled censoring levels**. K is matched first: an exact K, or the nearest simulated K below and above. Within each selected K, the function returns the immediately lower and upper mean estimated tau. Exact matches take priority; ties are retained, and boundary messages explain when only one side is available.
+The defaults are **Extended / QRP All / Censoring All**. Results are grouped automatically: K, true effect, population tau and QRP stay fixed, while the selected Censoring levels are averaged equally.
 
-**Grouped results are the default.** Each group holds K, true effect, population tau and QRP fixed. `universe = "all"` averages all three censoring levels. `universe = "pb_only"` includes every biased condition: censoring medium/high OR QRP medium/high. Thus PB-only groups contain two censoring levels at QRP none and all three at positive QRP. Both universes have the same K / effect / population-tau / QRP groups.
+```r
+pbias_closest(65, 0.2, qrp = "without", censoring = "all")
+pbias_closest(65, 0.2, qrp = "all", censoring = "without")
+pbias_closest(65, 0.2, qrp = "with", censoring = "with")
+```
 
-Use `pooling = "none"` for individual conditions, `qrp = "without"` for QRP none, or `qrp = "with"` for medium/high QRP. QRP levels remain separate in all modes.
+For both filters, `without` means none, `with` means medium/high, and `all` means all three levels. The filters are independent. QRP levels stay separate. Each group combines one Censoring level for Without, two for With, or three for All.
 
-Within a full condition, mean tau averages valid estimates among the 1,000 replications. `matches$n_tau` records the valid count (667 of 864,000 source tau estimates are missing). Group means give equal weight to each eligible censoring condition. `mean_tau` is the mean estimated standard deviation; `mean_tau2` is the mean estimated variance, and differs from `mean_tau^2`.
+A condition is classified as biased when QRP or Censoring is medium/high. Therefore QRP-only conditions remain biased even under `censoring = "without"`. Balanced Accuracy needs biased and unbiased results within a matched group; where those are absent it remains `NA`. Rejection rates remain available, with their applicability counts.
 
-`near$summary` gives one row per method, sorted by mean Balanced Accuracy. Each matched group receives equal weight. An average is available only when every selected match has a finite value; `ba_available` and `n_matches` show coverage. Per-match values remain in `near$performance`. Low applicability is flagged separately, including the number of matches below 90%.
+K is matched first, followed by the nearest lower/upper mean estimated tau at each selected K. Exact matches take priority, ties are retained, and boundary messages explain when only one side is available. Within each full condition, mean tau uses valid estimates among 1,000 replications. `matches$n_tau` records the valid count. Mean tau-squared is the average estimated variance and differs from squared mean tau.
 
-Rejection rates exclude missing tests. Applicability reports the fraction of all replications with valid results. TPR requires biased conditions; FPR requires unbiased conditions; Balanced Accuracy requires both. Missing metrics remain `NA`, including for biased-only groups and individual conditions. No additional control conditions are invented. All numeric rates are proportions. Pooled rates give equal weight to available component-condition rates.
+`near$summary` gives one row per method, sorted by mean Balanced Accuracy with equal weight per selected match. Complete averages require finite values in every match; `ba_available` and `n_matches` show coverage. Detailed values remain in `near$performance`. Low applicability is flagged separately.
 
-The summaries include all 864 Extended conditions. Original restricts K to 10, 30, 60 and 100 (432 conditions based on Carter et al., 2019). The Shiny app uses this same package function for matching and its average-performance chart; hovering a bar shows each match's value.
+Legacy advanced arguments `universe` and `pooling` remain supported for existing scripts. The standard app uses the direct QRP and Censoring filters and automatic grouping.
+
+The app uses this same package function for matching, average-performance figures and CSV exports. The source summaries cover all 864 Extended conditions; Original restricts K to 10, 30, 60 and 100 (432 conditions based on Carter et al., 2019).

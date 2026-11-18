@@ -10,7 +10,8 @@ pbias_closest(
   design = c("extended", "original"),
   qrp = c("all", "without", "with"),
   universe = c("all", "pb_only"),
-  pooling = c("publication_bias", "none")
+  pooling = c("publication_bias", "none"),
+  censoring = c("all", "without", "with")
 )
 }
 \arguments{
@@ -22,21 +23,26 @@ deviation. If you have estimated tau-squared, supply `sqrt(tau2)`.}
 \item{design}{`"extended"` (864 conditions, K = 5 to 800) or `"original"`
 (432 conditions, K = 10 to 100, based on Carter et al., 2019).}
 
-\item{qrp}{`"without"` for no p-hacking, `"with"` for medium/high p-hacking,
+\item{qrp}{`"without"` for QRP none, `"with"` for QRP medium/high,
 or `"all"` for all three QRP levels. Levels remain separate.}
 
-\item{universe}{`"all"` (default) includes all conditions. `"pb_only"`
+\item{universe}{Legacy advanced filter, retained for compatibility.
+`"all"` (default) includes all conditions. `"pb_only"`
 includes any biased condition: medium/high censoring OR medium/high QRP,
 including QRP-only conditions without censoring.}
 
-\item{pooling}{`"publication_bias"` (default) holds K, true effect, population
-tau and QRP fixed and averages eligible censoring levels equally. All uses
-all three censoring levels. PB-only uses two at QRP none and all three at
-positive QRP, since those conditions are all biased. Both universes have
-the same groups. `"none"` retains full individual conditions.
-Each condition's mean tau averages valid estimates among its 1,000
-replications; `n_tau` records the count. `mean_tau2` is the average estimated
-variance, not the square of `mean_tau`.}
+\item{pooling}{Legacy advanced aggregation option, retained for existing
+scripts. The default `"publication_bias"` groups the selected conditions
+by K, true effect, population tau and QRP, averaging eligible Censoring
+levels equally. `"none"` retains full individual conditions.
+Within each condition, mean tau uses valid estimates among its 1,000
+replications; `n_tau` records their count. `mean_tau2` is the average
+estimated variance, not the square of `mean_tau`.}
+
+\item{censoring}{`"all"` (default) includes Censoring none/medium/high,
+`"without"` includes none, and `"with"` includes medium/high. This filter
+is independent of QRP. Grouped results automatically average the selected
+Censoring levels while keeping QRP levels separate.}
 }
 \value{
 An object of class `pbias_closest_result` with `matches` (condition
@@ -78,5 +84,5 @@ near <- pbias_closest(k = 65, tau = 0.2)
 near
 head(near$performance)
 # If your estimate is tau-squared = 0.04:
-pbias_closest(k = 60, tau = sqrt(0.04), universe = "all")
+pbias_closest(k = 60, tau = sqrt(0.04), censoring = "all")
 }
