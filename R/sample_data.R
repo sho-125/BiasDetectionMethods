@@ -41,13 +41,7 @@ pbias_sample_data <- function(which = 1) {
 }
 
 .load_sample_file <- function(file) {
-  path <- system.file("extdata", file, package = "pbiasr")
-  if (!nzchar(path) || !file.exists(path)) {
-    local_path <- file.path("inst", "extdata", file)
-    if (file.exists(local_path)) {
-      path <- local_path
-    }
-  }
+  path <- .pbias_extdata_file(file)
   if (!nzchar(path) || !file.exists(path)) {
     stop("Could not find `", file, "` in package extdata.")
   }

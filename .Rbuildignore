@@ -6,3 +6,5 @@
 ^update_package_and_push\.R$
 ^\.Rhistory$
 ^\.RData$
+
+^dev$

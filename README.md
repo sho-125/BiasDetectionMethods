@@ -8,12 +8,12 @@
 - **Optional input:** `obs`
 - **Main function:** `pbias_table()`
 - **Sample data:** `pbias_sample_data()`
-- **Default sorting:** `Balanced Accuracy` ranking for the detected paper case
+- **Default sorting:** `Logit Distance` ranking for the detected paper case
 
 The package returns publication-bias test results only:
 
 1. `bias_summary`: raw one-row-per-method publication-bias results
-2. `publication_table`: formatted three-column display table sorted by Balanced Accuracy
+2. `publication_table`: formatted four-column display table sorted by the selected metric
 3. `case`: paper case based on number of studies and I-squared
 4. `interpretation`: short interpretation text for the publication-bias tests
 5. `meta`: run metadata
@@ -61,7 +61,7 @@ remotes::install_local("pbiasr")
 Or from a local tarball:
 
 ```r
-install.packages("pbiasr_0.2.8.tar.gz", repos = NULL, type = "source")
+install.packages("pbiasr_0.2.9.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
@@ -111,7 +111,7 @@ The printed publication-bias table follows this interpretation:
 - **Estimated p-value:** calculated from the user's meta-analysis data
 - **Balanced Accuracy:** based on the corresponding results from **OUR PUBLICATION BIAS** paper
 - If a method cannot be run, `P-value` shows a short status such as `requires obs`, `n/a`, or `failed`.
-- `not recommended` in the Balanced Accuracy column means the estimator did not meet the applicability/convergence criteria for that paper case.
+- `Unranked*` in the Balanced Accuracy column means the estimator did not meet the applicability/convergence criteria for that paper case.
 
 The printed note also points users to the interactive Shiny app:
 
@@ -124,7 +124,7 @@ https://biasdetectionmethods.shinyapps.io/main/
 `pbias_table()` returns an object of class `pbias_result` with:
 
 - `bias_summary`
-- `publication_table` (Estimator / P-value / Balanced Accuracy)
+- `publication_table` (Method / P-value / Balanced Accuracy / Logit Distance)
 - `case`
 - `interpretation`
 - `meta`
@@ -156,3 +156,14 @@ https://biasdetectionmethods.shinyapps.io/main/
 | CALI10 | `Caliper10` |
 | CALI15 | `Caliper15` |
 | CALI20 | `Caliper20` |
+
+## Numerical corrections in 0.2.9
+
+- AK1 and AK2 convert the minimized negative log-likelihood back to a log-likelihood before computing `2 * (logLik_selected - logLik_no_selection)`. AK1 uses 1 degree of freedom and AK2 uses 3, matching the supplied simulation implementation.
+- AK coefficient p-values use Student t tail probabilities. Hessian standard errors use the square roots of the covariance diagonal, avoiding square roots of negative off-diagonal entries. Invalid fits and missing selection intervals are reported explicitly.
+- Constant standard errors do not yield valid Egger slope tests. Constant sample sizes are marked unavailable for MAIVE/FATIV. Invalid p-values are reported as unavailable rather than successful results.
+- Internal selection-model coefficient p-values use two-sided normal tails. This does not change their publication-bias likelihood-ratio tests.
+
+The default sort is Logit Distance. Use `ranking_metric = "balanced_accuracy"` to sort by Balanced Accuracy instead. The reference I-squared decision rule is based on the Size x I2 (Extended) simulation results.
+
+TES uses the reference right-tail alpha of 0.025 when `alpha = 0.05`. Default caliper windows reproduce the literal 1.96-centered boundaries in the simulation code (for example CALI05 uses 1.86-1.96 and 1.96-2.06), including the five-observation applicability rule.

@@ -8,9 +8,10 @@
 #' @param obs Optional numeric vector of study-level sample size proxies. This is
 #'   required for the EGGER4 / EGGER5 implementations in this package.
 #' @param study_id Optional study identifiers. Defaults to 1:n.
-#' @param alpha Significance level used by the caliper windows and excess-significance
-#'   tests. The core implementations follow the uploaded code and paper, which use
-#'   0.05 by default.
+#' @param alpha Two-sided significance level used by the caliper windows and TES.
+#'   TES uses \code{alpha / 2} for its right-tail threshold, matching the supplied
+#'   simulation code. The default caliper boundaries reproduce that code's fixed
+#'   intervals around 1.96. PSST/TESS retain their paper-defined 0.05 thresholds.
 #' @param sort_by_rank Logical. If \code{TRUE}, sort the displayed publication-bias
 #'   results by the selected ranking metric for the detected paper case.
 #' @param ranking_metric Character. Ranking metric used to sort the displayed
@@ -63,6 +64,13 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
   
   # Helper for summary rows
   add_bias <- function(code_method, p_value, status = "ok", note = "") {
+    if (length(p_value) != 1L || !is.finite(p_value) || p_value < 0 || p_value > 1) {
+      p_value <- NA_real_
+      if (identical(status, "ok")) {
+        status <- "failed"
+        note <- "The method did not return a finite p-value between zero and one."
+      }
+    }
     idx <- match(code_method, method_map$code_method)
     meta_row <- method_map[idx, , drop = FALSE]
     bias_rows[[meta_row$paper_method]] <<- data.frame(
@@ -130,7 +138,7 @@ pbias_table <- function(yi, sei, obs = NULL, study_id = NULL, alpha = 0.05,
   add_bias("SKEWCombined", res$combined_p, res$status, res$note)
   
   # Excess significance tests
-  res <- .fit_tes(dt, alpha = alpha)
+  res <- .fit_tes(dt, alpha = alpha / 2)
   add_bias("TES", res$pub_bias_p, res$status, res$note)
   
   res <- .fit_psst_tess(dt)
@@ -275,7 +283,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (!is.null(study_id) && length(study_id) != length(yi)) {
     stop("If supplied, `study_id` must have the same length as `yi`.")
   }
-  if (!is.numeric(alpha) || length(alpha) != 1L || alpha <= 0 || alpha >= 1) {
+  if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) || alpha <= 0 || alpha >= 1) {
     stop("`alpha` must be a single number between 0 and 1.")
   }
   if (!is.logical(sort_by_rank) || length(sort_by_rank) != 1L || is.na(sort_by_rank)) {
@@ -611,13 +619,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     return(data.frame())
   }
   
-  path <- system.file("extdata", "type1_performance.csv", package = "pbiasr")
-  if (!nzchar(path)) {
-    local_path <- file.path("inst", "extdata", "type1_performance.csv")
-    if (file.exists(local_path)) {
-      path <- local_path
-    }
-  }
+  path <- .pbias_extdata_file("type1_performance.csv")
   if (!nzchar(path) || !file.exists(path)) {
     return(.type1_performance_fallback(case_code))
   }
@@ -771,6 +773,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 # Egger variants -----------------------------------------------------------
 
 .fit_egger_fe <- function(dt) {
+  if (length(unique(dt$se)) < 2L) {
+    return(.na_result("Egger regression requires varying standard errors.", status = "not_applicable"))
+  }
   mod <- tryCatch(
     metafor::rma(dt$eff ~ dt$se, dt$se^2, method = "FE"),
     error = function(e) NULL
@@ -790,6 +795,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 }
 
 .fit_egger_re <- function(dt) {
+  if (length(unique(dt$se)) < 2L) {
+    return(.na_result("Egger regression requires varying standard errors.", status = "not_applicable"))
+  }
   mod <- tryCatch(
     metafor::rma(dt$eff ~ dt$se, dt$se^2, method = "REML"),
     error = function(e) NULL
@@ -810,6 +818,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 }
 
 .fit_egger_wls <- function(dt) {
+  if (length(unique(dt$se)) < 2L) {
+    return(.na_result("Egger regression requires varying standard errors.", status = "not_applicable"))
+  }
   mod <- tryCatch(
     stats::lm(dt$eff ~ dt$se, weights = 1 / (dt$se^2)),
     error = function(e) NULL
@@ -870,6 +881,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
   if (is.null(dt$obs)) {
     return(.na_result("EGGER4 / MAIVE requires `obs`.", status = "requires_obs"))
   }
+  if (length(unique(dt$obs)) < 2L) {
+    return(.na_result("MAIVE requires varying sample sizes.", status = "not_applicable"))
+  }
   ans <- tryCatch(.MAIVE_EST(dt), error = function(e) NULL)
   if (is.null(ans)) return(.na_result("MAIVE model failed."))
   
@@ -890,6 +904,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 .fit_fativ <- function(dt) {
   if (is.null(dt$obs)) {
     return(.na_result("EGGER5 / FATIV requires `obs`.", status = "requires_obs"))
+  }
+  if (length(unique(dt$obs)) < 2L) {
+    return(.na_result("FATIV requires varying sample sizes.", status = "not_applicable"))
   }
   ans <- tryCatch(.MAIVE2_EST(dt), error = function(e) NULL)
   if (is.null(ans)) return(.na_result("FATIV model failed."))
@@ -929,7 +946,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     estimate = c(est, pub.sel.3psm),
     std_error = c(se, NA_real_),
     statistic = c(est / se, NA_real_),
-    p_value = c(stats::pnorm(est / se, lower.tail = FALSE) * 2, NA_real_),
+    p_value = c(2 * stats::pnorm(-abs(est / se)), NA_real_),
     conf_low = c(est + stats::qnorm(0.025) * se, NA_real_),
     conf_high = c(est + stats::qnorm(0.975) * se, NA_real_)
   )
@@ -957,7 +974,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     estimate = c(est, pub.sel.4psm),
     std_error = c(se, NA_real_),
     statistic = c(est / se, NA_real_),
-    p_value = c(stats::pnorm(est / se, lower.tail = FALSE) * 2, NA_real_),
+    p_value = c(2 * stats::pnorm(-abs(est / se)), NA_real_),
     conf_low = c(est + stats::qnorm(0.025) * se, NA_real_),
     conf_high = c(est + stats::qnorm(0.975) * se, NA_real_)
   )
@@ -968,6 +985,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 
 .AK1logLik <- function(para, mydata, z = c("est", "log")) {
   z <- match.arg(z)
+  if (any(!is.finite(para)) || para[1] < 0 || para[2] <= 0) {
+    return(if (z == "est") 1e10 else rep(NA_real_, nrow(mydata)))
+  }
   n <- nrow(mydata)
   tauhat <- para[1]
   betap <- para[2]
@@ -991,10 +1011,8 @@ print.pbias_result <- function(x, digits = 3, ...) {
     prob_ex <- 1 - prob_mid
     meanbeta[i] <- betap * prob_mid + 1 * prob_ex
   }
-  fX <- stats::dnorm(err, 0, sqrt(se^2 + tauhat))
-  L <- (phat / meanbeta) * fX
-  logL <- log(L)
-  LLH <- -sum(log(L))
+  logL <- stats::dnorm(err, 0, sqrt(se^2 + tauhat), log = TRUE) + log(phat) - log(meanbeta)
+  LLH <- -sum(logL)
   if (tauhat < 0 || betap < 0) {
     LLH <- 1e10
   }
@@ -1003,6 +1021,9 @@ print.pbias_result <- function(x, digits = 3, ...) {
 
 .AK2logLik <- function(para, mydata, z = c("est", "log")) {
   z <- match.arg(z)
+  if (any(!is.finite(para)) || para[1] < 0 || any(para[2:4] <= 0)) {
+    return(if (z == "est") 1e10 else rep(NA_real_, nrow(mydata)))
+  }
   n <- nrow(mydata)
   tauhat <- para[1]
   beta1 <- para[2]
@@ -1032,36 +1053,56 @@ print.pbias_result <- function(x, digits = 3, ...) {
     meanbeta[i] <- beta1 * prob_vlow + beta2 * prob_low + beta3 * prob_upper + 1 * prob_vupper
   }
   
-  fX <- stats::dnorm(err, 0, sqrt(se^2 + tauhat))
-  L <- (phat / meanbeta) * fX
-  logL <- log(L)
-  LLH <- -sum(log(L))
+  logL <- stats::dnorm(err, 0, sqrt(se^2 + tauhat), log = TRUE) + log(phat) - log(meanbeta)
+  LLH <- -sum(logL)
   if (tauhat < 0 || beta1 < 0 || beta2 < 0 || beta3 < 0) {
     LLH <- 1e10
   }
   if (z == "est") LLH else logL
 }
 
+.ak_likelihood_ratio <- function(loglik_alt, loglik_null, df) {
+  if (length(loglik_alt) != 1L || length(loglik_null) != 1L ||
+      !is.finite(loglik_alt) || !is.finite(loglik_null)) {
+    return(list(statistic = NA_real_, df = df, p_value = NA_real_,
+                status = "failed", note = "AK likelihood comparison is unavailable."))
+  }
+  statistic <- 2 * (loglik_alt - loglik_null)
+  tolerance <- 1e-7 * (1 + abs(loglik_null))
+  if (statistic < -tolerance) {
+    return(list(statistic = statistic, df = df, p_value = NA_real_, status = "failed",
+                note = "AK optimization returned a lower likelihood than the nested no-selection model."))
+  }
+  statistic <- max(0, statistic)
+  list(statistic = statistic, df = df,
+       p_value = stats::pchisq(statistic, df, lower.tail = FALSE),
+       loglik_alt = loglik_alt, loglik_null = loglik_null, status = "ok", note = "")
+}
+
 .fit_ak1 <- function(dt) {
+  if (nrow(dt) <= 3L || length(unique(abs(dt$eff / dt$se) >= 1.96)) < 2L) {
+    return(.na_result("AK1 requires more than three studies and both significant and nonsignificant effects.",
+                      status = "not_applicable"))
+  }
   AKdata <- as.data.frame(cbind(id = as.numeric(dt$StdID), effect = dt$eff, se = dt$se, constant = 1))
   InitialValue <- as.numeric(mean(AKdata$effect))
   t2 <- mean(AKdata$se^2) / 4
   fn <- function(par) .AK1logLik(par, AKdata, "est")
   Result <- tryCatch(
-    nlminb(fn,
-           start = c(t2, 0, InitialValue),
+    stats::nlminb(objective = fn,
+           start = c(t2, 1, InitialValue),
            lower = c(0, 0.01, rep(-Inf, length(InitialValue))),
            upper = c(Inf, Inf, rep(Inf, length(InitialValue))),
-           hessian = TRUE,
            control = list(iter.max = 1000, abs.tol = 10^(-20), eval.max = 1000)),
     error = function(e) NULL
   )
-  if (is.null(Result) || Result$convergence == 1) {
+  if (is.null(Result) || !isTRUE(Result$convergence == 0) ||
+      any(!is.finite(Result$par)) || !is.finite(Result$objective)) {
     return(.na_result("AK1 failed or did not converge."))
   }
   
   se_vec <- tryCatch(
-    diag(sqrt(MASS::ginv(numDeriv::hessian(fn, Result$par), tol = 10^(-30)))),
+    sqrt(diag(MASS::ginv(numDeriv::hessian(fn, Result$par), tol = 10^(-30)))),
     error = function(e) rep(NA_real_, length(Result$par))
   )
   estcoef <- as.numeric(Result$par)
@@ -1075,14 +1116,17 @@ print.pbias_result <- function(x, digits = 3, ...) {
   rho1_se <- se_vec[2]
   tau2_est <- estcoef[1]
   tau2_se <- se_vec[1]
-  AK1LLK <- .AK1logLik(Result$par, AKdata, "est")
+  # The objective is a NEGATIVE log-likelihood. Store a log-likelihood here,
+  # matching import/0-EstimatorsFULL.R before comparing the two models.
+  AK1LLK <- -.AK1logLik(Result$par, AKdata, "est")
   
   re_mod <- tryCatch(metafor::rma(dt$eff, dt$se^2, method = "ML"), error = function(e) NULL)
-  RE_LLK <- if (is.null(re_mod)) NA_real_ else as.numeric(logLik(re_mod, REML = FALSE))
+  RE_LLK <- if (is.null(re_mod)) NA_real_ else as.numeric(stats::logLik(re_mod, REML = FALSE))
+  likelihood_test <- .ak_likelihood_ratio(AK1LLK, RE_LLK, df = 1)
+  if (likelihood_test$status != "ok") return(.na_result(likelihood_test$note))
   cv.025 <- stats::qnorm(0.975) * dt$se
   if (!is.na(RE_LLK) && !is.na(AK1LLK)) {
-    LRT <- -2 * (AK1LLK - RE_LLK)
-    pLRT <- stats::pchisq(LRT, 1, lower.tail = FALSE)
+    pLRT <- likelihood_test$p_value
     sig.plus <- stats::pnorm(cv.025, b0_est, sqrt(tau2_est + dt$se^2), lower.tail = FALSE)
     nonsig.plus <- stats::pnorm(0, b0_est, sqrt(tau2_est + dt$se^2), lower.tail = FALSE) - sig.plus
     sig.min <- stats::pnorm(-cv.025, b0_est, sqrt(tau2_est + dt$se^2), lower.tail = TRUE)
@@ -1095,35 +1139,42 @@ print.pbias_result <- function(x, digits = 3, ...) {
   
   est <- rbind(
     .make_estimates("b0", b0_est, b0_se, b0_est / b0_se,
-                    stats::dt(b0_est / b0_se, df = nrow(AKdata) - length(estcoef)),
+                    2 * stats::pt(-abs(b0_est / b0_se), df = nrow(AKdata) - length(estcoef)),
                     b0_est - crit * b0_se, b0_est + crit * b0_se),
     .make_estimates("rho1", rho1_est, rho1_se),
     .make_estimates("tau2", tau2_est, tau2_se),
     .make_estimates("pubSelRate", pub.sel)
   )
-  list(estimates = est, pub_bias_p = pLRT, status = "ok", note = "")
+  list(estimates = est, pub_bias_p = pLRT, status = "ok", note = "", test = likelihood_test)
 }
 
 .fit_ak2 <- function(dt) {
+  z <- dt$eff / dt$se
+  region_counts <- c(sum(z <= -1.96), sum(-1.96 < z & z <= 0),
+                     sum(0 < z & z < 1.96), sum(z >= 1.96))
+  if (nrow(dt) <= 5L || any(region_counts == 0L)) {
+    return(.na_result("AK2 requires more than five studies and observations in all four selection intervals.",
+                      status = "not_applicable"))
+  }
   AKdata <- as.data.frame(cbind(id = as.numeric(dt$StdID), effect = dt$eff, se = dt$se, constant = 1))
   InitialValue <- as.numeric(mean(AKdata$effect))
   t2 <- mean(AKdata$se^2) / 4
   fn <- function(par) .AK2logLik(par, AKdata, "est")
   Result <- tryCatch(
-    nlminb(fn,
-           start = c(t2, 0, 0, 0, InitialValue),
+    stats::nlminb(objective = fn,
+           start = c(t2, 1, 1, 1, InitialValue),
            lower = c(0, 0.01, 0.01, 0.01, rep(-Inf, length(InitialValue))),
            upper = c(Inf, Inf, Inf, Inf, rep(Inf, length(InitialValue))),
-           hessian = TRUE,
            control = list(iter.max = 1000, abs.tol = 10^(-20), eval.max = 1000)),
     error = function(e) NULL
   )
-  if (is.null(Result) || Result$convergence == 1) {
+  if (is.null(Result) || !isTRUE(Result$convergence == 0) ||
+      any(!is.finite(Result$par)) || !is.finite(Result$objective)) {
     return(.na_result("AK2 failed or did not converge."))
   }
   
   se_vec <- tryCatch(
-    diag(sqrt(MASS::ginv(numDeriv::hessian(fn, Result$par), tol = 10^(-30)))),
+    sqrt(diag(MASS::ginv(numDeriv::hessian(fn, Result$par), tol = 10^(-30)))),
     error = function(e) rep(NA_real_, length(Result$par))
   )
   estcoef <- as.numeric(Result$par)
@@ -1137,13 +1188,16 @@ print.pbias_result <- function(x, digits = 3, ...) {
   rho2_est <- estcoef[3]; rho2_se <- se_vec[3]
   rho3_est <- estcoef[4]; rho3_se <- se_vec[4]
   b0_est <- estcoef[5]; b0_se <- se_vec[5]
-  AK2LLK <- .AK2logLik(Result$par, AKdata, "est")
+  AK2LLK <- -.AK2logLik(Result$par, AKdata, "est")
   
   re_mod <- tryCatch(metafor::rma(dt$eff, dt$se^2, method = "ML"), error = function(e) NULL)
-  RE_LLK <- if (is.null(re_mod)) NA_real_ else as.numeric(logLik(re_mod, REML = FALSE))
+  RE_LLK <- if (is.null(re_mod)) NA_real_ else as.numeric(stats::logLik(re_mod, REML = FALSE))
+  # Three free publication weights are fixed at one under no selection.
+  likelihood_test <- .ak_likelihood_ratio(AK2LLK, RE_LLK, df = 3)
+  if (likelihood_test$status != "ok") return(.na_result(likelihood_test$note))
   cv.025 <- stats::qnorm(0.975) * dt$se
   if (!is.na(RE_LLK) && !is.na(AK2LLK)) {
-    pLRT <- stats::pchisq(-2 * (AK2LLK - RE_LLK), 2, lower.tail = FALSE)
+    pLRT <- likelihood_test$p_value
     sig.plus <- stats::pnorm(cv.025, b0_est, sqrt(tau2_est + dt$se^2), lower.tail = FALSE)
     nonsig.plus <- stats::pnorm(0, b0_est, sqrt(tau2_est + dt$se^2), lower.tail = FALSE) - sig.plus
     sig.min <- stats::pnorm(-cv.025, b0_est, sqrt(tau2_est + dt$se^2), lower.tail = TRUE)
@@ -1156,7 +1210,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   
   est <- rbind(
     .make_estimates("b0", b0_est, b0_se, b0_est / b0_se,
-                    stats::dt(b0_est / b0_se, df = nrow(AKdata) - length(estcoef)),
+                    2 * stats::pt(-abs(b0_est / b0_se), df = nrow(AKdata) - length(estcoef)),
                     b0_est - crit * b0_se, b0_est + crit * b0_se),
     .make_estimates("rho1", rho1_est, rho1_se),
     .make_estimates("rho2", rho2_est, rho2_se),
@@ -1164,7 +1218,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
     .make_estimates("tau2", tau2_est, tau2_se),
     .make_estimates("pubSelRate", pub.sel)
   )
-  list(estimates = est, pub_bias_p = pLRT, status = "ok", note = "")
+  list(estimates = est, pub_bias_p = pLRT, status = "ok", note = "", test = likelihood_test)
 }
 
 # EK, TES, PSST/TESS, BEGG, p-uniform -------------------------------------
@@ -1208,7 +1262,7 @@ print.pbias_result <- function(x, digits = 3, ...) {
   list(estimates = est, pub_bias_p = est$p_value[est$term == "g"], status = "ok", note = "")
 }
 
-.fit_tes <- function(dt, alpha = 0.05, side = "right") {
+.fit_tes <- function(dt, alpha = 0.025, side = "right") {
   out <- tryCatch({
     est.fe <- metafor::rma(yi = dt$eff, sei = dt$se, method = "FE")$b[1]
     if (side == "right") {
@@ -1292,6 +1346,10 @@ print.pbias_result <- function(x, digits = 3, ...) {
 # Skewness ----------------------------------------------------------------
 
 .fit_skew <- function(dt, reMA_model) {
+  if (length(unique(dt$se)) < 2L) {
+    return(list(skew_p = NA_real_, combined_p = NA_real_, status = "not_applicable",
+                note = "Skewness regression requires varying standard errors."))
+  }
   if (is.null(reMA_model)) {
     return(list(skew_p = NA_real_, combined_p = NA_real_, status = "failed", note = "Baseline RE model unavailable."))
   }
@@ -1328,15 +1386,24 @@ print.pbias_result <- function(x, digits = 3, ...) {
   zcrit <- stats::qnorm(1 - alpha / 2)
   abtstat <- abs(dt$eff / dt$se)
   windows <- c(0.05, 0.10, 0.15, 0.20)
+  # Reproduce the simulation's literal rounded endpoints at the default level.
+  # In particular CALI05 uses (1.86, 1.96) and (1.96, 2.06), not +/-0.098.
+  if (alpha == 0.05) {
+    zcrit <- 1.96
+    lower <- c(1.86, 1.76, 1.66, 1.56)
+    upper <- c(2.06, 2.16, 2.26, 2.36)
+  } else {
+    lower <- zcrit * (1 - windows)
+    upper <- zcrit * (1 + windows)
+  }
   code_methods <- c("Caliper05", "Caliper10", "Caliper15", "Caliper20")
   notes <- character(length(windows))
   pvals <- numeric(length(windows))
   status <- character(length(windows))
   
   for (i in seq_along(windows)) {
-    w <- windows[i]
-    over <- sum(zcrit < abtstat & abtstat < zcrit * (1 + w))
-    under <- sum(zcrit * (1 - w) < abtstat & abtstat < zcrit)
+    over <- sum(zcrit < abtstat & abtstat < upper[i])
+    under <- sum(lower[i] < abtstat & abtstat < zcrit)
     total <- over + under
     if (total < 5) {
       pvals[i] <- NA_real_
