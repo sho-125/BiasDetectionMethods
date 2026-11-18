@@ -8,9 +8,9 @@ pbias_closest(
   k,
   tau,
   design = c("extended", "original"),
-  qrp = c("without", "with", "all"),
-  universe = c("pb_only", "all"),
-  pooling = c("none", "publication_bias")
+  qrp = c("all", "without", "with"),
+  universe = c("all", "pb_only"),
+  pooling = c("publication_bias", "none")
 )
 }
 \arguments{
@@ -25,24 +25,28 @@ deviation. If you have estimated tau-squared, supply `sqrt(tau2)`.}
 \item{qrp}{`"without"` for no p-hacking, `"with"` for medium/high p-hacking,
 or `"all"` for all three QRP levels. Levels remain separate.}
 
-\item{universe}{`"pb_only"` for medium/high publication-bias censoring, or
-`"all"` to include no-censoring conditions as well.}
+\item{universe}{`"all"` (default) includes all conditions. `"pb_only"`
+includes any biased condition: medium/high censoring OR medium/high QRP,
+including QRP-only conditions without censoring.}
 
-\item{pooling}{`"none"` (default) retains every full simulation condition.
-Its mean tau averages valid tau estimates among the 1,000 replications
-within that condition only; `n_tau` records the denominator.
-Optional `"publication_bias"` pools censoring levels while holding K, true
-effect, population tau and QRP fixed: two levels for `"pb_only"`, three for
-`"all"`. Both pooled universes then have the same groups. This is an explicit
-additional aggregation, not averaging neighbouring matches.}
+\item{pooling}{`"publication_bias"` (default) holds K, true effect, population
+tau and QRP fixed and averages eligible censoring levels equally. All uses
+all three censoring levels. PB-only uses two at QRP none and all three at
+positive QRP, since those conditions are all biased. Both universes have
+the same groups. `"none"` retains full individual conditions.
+Each condition's mean tau averages valid estimates among its 1,000
+replications; `n_tau` records the count. `mean_tau2` is the average estimated
+variance, not the square of `mean_tau`.}
 }
 \value{
 An object of class `pbias_closest_result` with `matches` (condition
   settings), `performance` (numeric results for all 21 methods per match),
+  `summary` (one row per method, averaged across all matches),
   `candidates` (the eligible conditions), `notes` (boundary messages), and
   `meta` (inputs, aggregation and simulation-data provenance). Rates are
-  proportions, not percentages. Printing shows the matches and explains how
-  to access the complete method results.
+  proportions, not percentages. Printing shows the matches on
+  both heterogeneity scales and the mean Balanced Accuracy table. Defaults
+  are Extended, all QRP levels, all conditions and pooled censoring levels.
 }
 \description{
 Matches the number of studies first, then brackets the supplied estimated
@@ -61,7 +65,13 @@ If K was simulated, only that K is searched. Otherwise the nearest K
   divided by total replications. A condition is biased when censoring or QRP
   is non-zero. TPR is available for biased conditions, FPR for unbiased
   conditions; Balanced Accuracy requires both. Missing metrics remain NA.
-  Optional pooled rates give equal weight to component-condition rates.
+  Pooled rates give equal weight to component-condition rates.
+
+  The returned summary gives equal weight to each selected match. A method's
+  mean Balanced Accuracy or rejection rate is available only when that metric
+  is finite for every match. Missing values are never replaced with zero.
+  Summary rows are sorted by mean Balanced Accuracy, with unavailable means
+  last. Low applicability is reported separately and retained in the output.
 }
 \examples{
 near <- pbias_closest(k = 65, tau = 0.2)

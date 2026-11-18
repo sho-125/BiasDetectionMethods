@@ -32,10 +32,10 @@ test_that("individual conditions remain unpooled and rates retain their denomina
   for (design in c("original", "extended")) {
     for (qrp in c("without", "with", "all")) {
       for (universe in c("pb_only", "all")) {
-        out <- pbias_closest(65, 0.2, design, qrp, universe)
+        out <- pbias_closest(65, 0.2, design, qrp, universe, pooling = "none")
         base_count <- if (design == "original") 432L else 864L
         expected <- base_count * switch(qrp, without = 1/3, with = 2/3, all = 1) *
-          if (universe == "pb_only") 2/3 else 1
+          if (universe == "pb_only") switch(qrp, without = 2/3, with = 1, all = 8/9) else 1
         expect_equal(nrow(out$candidates), expected)
         expect_true(all(out$matches$n_conditions == 1))
         expect_equal(sort(unique(out$matches$K)), c(60, 100))
@@ -55,18 +55,18 @@ test_that("individual conditions remain unpooled and rates retain their denomina
       }
     }
   }
-  all_conditions <- pbias_closest(65, 0.2, qrp = "all", universe = "all")$candidates
+  all_conditions <- pbias_closest(65, 0.2, qrp = "all", universe = "all", pooling = "none")$candidates
   ref <- subset(all_conditions, K == 30 & true_effect == 0.2 & population_tau == 0.2 & QRP == "none")
-  exact <- pbias_closest(30, ref$mean_tau[ref$Censor == "none"], universe = "all")
+  exact <- pbias_closest(30, ref$mean_tau[ref$Censor == "none"], universe = "all", qrp = "without", pooling = "none")
   expect_true(all(is.na(exact$performance$tpr)))
   expect_equal(exact$performance$fpr, exact$performance$rejection_rate)
 })
 
 test_that("optional pooling is explicit and matches independent component averages", {
-  pb <- pbias_closest(65, 0.2, qrp = "all", pooling = "publication_bias")
+  pb <- pbias_closest(65, 0.2, qrp = "all", universe = "pb_only", pooling = "publication_bias")
   all <- pbias_closest(65, 0.2, qrp = "all", universe = "all", pooling = "publication_bias")
   expect_setequal(pb$candidates$base_id, all$candidates$base_id)
-  expect_true(all(pb$candidates$n_conditions == 2L))
+  expect_equal(pb$candidates$n_conditions, ifelse(pb$candidates$QRP == "none", 2L, 3L))
   expect_true(all(all$candidates$n_conditions == 3L))
   data <- readRDS(system.file("extdata", "closest_conditions.rds", package = "pbiasr"))
   for (i in seq_len(nrow(all$matches))) {
@@ -80,7 +80,57 @@ test_that("optional pooling is explicit and matches independent component averag
     expect_equal(result$n_valid, sum(raw$n_valid))
   }
   expect_true(all(is.na(pb$performance$fpr)))
-  expect_output(print(pb), "Optional pooling")
-  expect_output(print(pbias_closest(65, 0.2)), "Individual conditions")
+  expect_output(print(pb), "publication_bias pooling")
+  expect_output(print(pbias_closest(65, 0.2)), "Mean_tau2")
   expect_length(pbias_closest(1000, 10)$notes, 2L)
+})
+
+
+test_that("new defaults are grouped Extended / all QRP / All and retain both tau scales", {
+  x <- pbias_closest(65, 0.2)
+  expect_equal(x$meta[c("design", "qrp", "universe", "pooling")],
+               list(design = "extended", qrp = "all", universe = "all", pooling = "publication_bias"))
+  expect_equal(nrow(x$candidates), 288L)
+  expect_equal(nrow(x$matches), 4L)
+  expect_equal(x$matches$K, c(60, 60, 100, 100))
+  expect_equal(x$matches$mean_tau, c(.1811738, .2175545, .1842785, .2197795), tolerance = 1e-6)
+  expect_equal(x$matches$mean_tau2, c(.03393001, .04971837, .03462290, .04996398), tolerance = 1e-7)
+  expect_true(all(abs(x$matches$mean_tau2 - x$matches$mean_tau^2) > 1e-5))
+  expect_equal(nrow(x$summary), 21L)
+  expect_true(all(diff(na.omit(x$summary$mean_balanced_accuracy)) <= 0))
+  for (method in x$summary$method) {
+    b <- x$performance[x$performance$method == method, ]$balanced_accuracy
+    expected <- if (all(is.finite(b))) mean(b) else NA_real_
+    expect_equal(x$summary$mean_balanced_accuracy[x$summary$method == method], expected)
+  }
+})
+
+test_that("biased-only membership includes QRP-only conditions in raw and pooled modes", {
+  all <- pbias_closest(65, .2, pooling = "none")
+  pb <- pbias_closest(65, .2, universe = "pb_only", pooling = "none")
+  expected <- subset(all$candidates, Censor != "none" | QRP != "none")
+  expect_setequal(pb$candidates$Environment, expected$Environment)
+  expect_equal(nrow(pb$candidates), 768L)
+  expect_equal(sum(pb$candidates$Censor == "none"), 192L)
+  with_qrp <- pbias_closest(65, .2, qrp = "with", universe = "pb_only", pooling = "none")
+  expect_equal(nrow(with_qrp$candidates), 576L)
+  pooled_pb <- pbias_closest(65, .2, universe = "pb_only")$candidates
+  pooled_all <- pbias_closest(65, .2)$candidates
+  positive <- pooled_pb$QRP != "none"
+  i <- match(pooled_pb$base_id[positive], pooled_all$base_id)
+  expect_equal(pooled_pb$mean_tau[positive], pooled_all$mean_tau[i])
+  expect_equal(pooled_pb$mean_tau2[positive], pooled_all$mean_tau2[i])
+  expect_true(all(pooled_pb$n_conditions[positive] == 3))
+})
+
+test_that("summary gives equal match weights and never fills missing BA", {
+  p <- data.frame(method = rep(c("A", "B", "C"), each = 2), match_id = rep(c("M1", "M2"), 3),
+                  balanced_accuracy = c(.6, .8, .4, .6, .7, NA),
+                  rejection_rate = c(.2, .4, .8, .6, .3, .5), applicability = c(1, 1, .8, 1, 1, 1))
+  s <- pbiasr:::.pbias_closest_summary(p, c("M1", "M2"))
+  expect_equal(s$method, c("A", "B", "C"))
+  expect_equal(s$mean_balanced_accuracy, c(.7, .5, NA))
+  expect_equal(s$mean_rejection_rate, c(.3, .7, .4))
+  expect_equal(s$ba_available, c(2L, 2L, 1L))
+  expect_equal(s$low_applicability_matches, c(0L, 1L, 0L))
 })

@@ -1,3 +1,10 @@
+# pbiasr 0.3.1
+
+- Closest lookup now defaults to Extended / all QRP / All conditions / pooled censoring levels.
+- The biased-only universe includes QRP-only conditions (censoring or QRP defines bias), consistently for matching and performance.
+- Matched mean estimated tau-squared is shown alongside mean tau. These are distinct averages.
+- Added a sorted method summary: equal-weight mean Balanced Accuracy across matched groups, per-metric coverage, and applicability. Complete averages require a valid value in every match; detailed match results are retained.
+
 # pbiasr 0.3.0
 
 - Added `pbias_closest(k, tau)` to find and present neighbouring simulation conditions and performance of all 21 methods.
