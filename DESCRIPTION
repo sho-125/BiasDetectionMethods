@@ -1,7 +1,7 @@
 Package: pbiasr
 Type: Package
 Title: Publication Bias Testing for Meta-Analysis
-Version: 0.2.9
+Version: 0.3.0
 Authors@R: person(given = "OpenAI", family = "Assistant", role = c("aut", "cre"), email = "noreply@example.com")
 Description: Runs a unified set of publication-bias tests for meta-analysis and returns
     raw machine-readable publication-bias results together with a formatted display
@@ -10,7 +10,9 @@ Description: Runs a unified set of publication-bias tests for meta-analysis and 
     and model-parameter estimates are intentionally not reported. The main
     interface requires only effect sizes and their standard errors. Methods that
     additionally need study-level sample size proxies can use the optional 'obs'
-    argument.
+    argument. Also finds neighbouring simulation conditions from the number of
+    studies and estimated heterogeneity, returning separate performance results
+    for all 21 methods.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: false

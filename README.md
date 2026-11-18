@@ -52,6 +52,12 @@ Your uploaded code implements EGGER4 / EGGER5 via `MAIVE` and `FATIV`. Those met
 
 ## Installation
 
+Install the current release from GitHub:
+
+```r
+remotes::install_github("sho-125/BiasDetectionMethods")
+```
+
 From an unpacked source folder:
 
 ```r
@@ -61,7 +67,7 @@ remotes::install_local("pbiasr")
 Or from a local tarball:
 
 ```r
-install.packages("pbiasr_0.2.9.tar.gz", repos = NULL, type = "source")
+install.packages("pbiasr_0.3.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
@@ -116,7 +122,7 @@ The printed publication-bias table follows this interpretation:
 The printed note also points users to the interactive Shiny app:
 
 ```text
-https://biasdetectionmethods.shinyapps.io/main/
+https://pbiasmethods.shinyapps.io/main/
 ```
 
 ## Returned object
@@ -167,3 +173,29 @@ https://biasdetectionmethods.shinyapps.io/main/
 The default sort is Logit Distance. Use `ranking_metric = "balanced_accuracy"` to sort by Balanced Accuracy instead. The reference I-squared decision rule is based on the Size x I2 (Extended) simulation results.
 
 TES uses the reference right-tail alpha of 0.025 when `alpha = 0.05`. Default caliper windows reproduce the literal 1.96-centered boundaries in the simulation code (for example CALI05 uses 1.86-1.96 and 1.96-2.06), including the five-observation applicability rule.
+
+
+## Closest simulation conditions (0.3.0)
+
+```r
+near <- pbias_closest(k = 65, tau = 0.2)
+near                       # a readable summary of the matched conditions
+near$performance           # all 21 methods for each match, as numeric data
+near$matches               # the full experimental settings
+
+# If your heterogeneity estimate is a variance, convert it to tau:
+pbias_closest(k = 65, tau = sqrt(0.04), universe = "all")
+
+# Restrict to the original design and medium/high p-hacking:
+pbias_closest(k = 30, tau = 0.2, design = "original", qrp = "with")
+```
+
+The default is the Extended design, without p-hacking, and medium/high publication-bias censoring. K is matched first: an exact K, or the nearest simulated K below and above. Within each selected K, the function returns the immediately lower and upper **mean estimated tau**. Exact tau matches take priority; ties are retained, and boundary messages explain when only one side is available. There is no combined distance score or interpolation.
+
+**Individual conditions are the default.** Mean tau averages valid tau estimates among the 1,000 replications within one full condition (K, true effect, population tau, QRP, and censoring). It is `mean(sqrt(estimated_tau2))`, not `sqrt(mean(estimated_tau2))`. Neighbouring matches and their method results are not averaged. `matches$n_tau` records the number of valid tau estimates (667 of the 864,000 estimates in the source are missing).
+
+An explicit optional `pooling = "publication_bias"` pools censoring severity while holding the other four factors fixed. PB-only pools medium/high; All pools none/medium/high, giving both pooled universes the same groups. This additional aggregation is labelled in the output and is not required by the individual-condition search.
+
+Rejection rates exclude missing test results. Applicability reports the fraction of all replications with valid results. QRP or censoring makes a condition biased. TPR is available for biased conditions and FPR for unbiased conditions; Balanced Accuracy requires both and stays `NA` for individual conditions. All rates are proportions. Pooled rates give equal weight to component conditions. The packaged summaries include all 864 conditions and provenance for the underlying simulation data; Original restricts K to 10, 30, 60 and 100 (432 conditions based on Carter et al., 2019).
+
+The Shiny app uses this same package function for its closest-condition search.
