@@ -1,3 +1,10 @@
+# pbiasr 0.4.0
+
+- Corrected closest-condition selection: all eligible individual conditions remain separate (864 Extended or 432 Original with All filters). K is matched first, then within-condition mean estimated tau.
+- Removed pooling before matching. Explicit legacy pooling requests now produce a migration error.
+- Method performance is summarised after selection. Mean TPR uses selected biased conditions and mean FPR selected unbiased conditions; descriptive BA gives those classes equal weight. Both classes and complete test rates are required.
+- Individual-condition BA remains unavailable. Console, app, hover and exports distinguish individual rates from the cross-condition BA comparison.
+
 # pbiasr 0.3.2
 
 - Added an independent `censoring` filter with `without`, `with` and `all`, alongside the same three QRP options.

@@ -1,70 +1,63 @@
-#' Find simulation conditions closest to a meta-analysis
+#' Find individual simulation conditions closest to a meta-analysis
 #'
-#' Matches the number of studies first, then brackets the supplied estimated
-#' heterogeneity with mean estimated tau from the simulations. Results for
-#' neighbouring conditions are kept separate; no distance score or interpolation
-#' is used. This is a lookup of simulation performance, not a test of new data.
+#' Filters the full simulation conditions, matches K first, then brackets the
+#' target tau using each condition's mean estimated tau. Censoring and QRP
+#' levels remain separate throughout selection. Performance is summarised only
+#' after the neighbours have been selected.
 #'
-#' @param k A single whole number of studies, at least 3.
-#' @param tau A single finite, non-negative estimated between-study standard
-#'   deviation. If you have estimated tau-squared, supply `sqrt(tau2)`.
+#' @param k A single finite whole number of studies, at least 3.
+#' @param tau Estimated between-study standard deviation, finite and non-negative.
+#'   Supply `sqrt(tau2)` if your estimate is a variance.
 #' @param design `"extended"` (864 conditions, K = 5 to 800) or `"original"`
 #'   (432 conditions, K = 10 to 100, based on Carter et al., 2019).
-#' @param qrp `"without"` for QRP none, `"with"` for QRP medium/high,
-#'   or `"all"` for all three QRP levels. Levels remain separate.
-#' @param universe Legacy advanced filter, retained for compatibility.
-#'   `"all"` (default) includes all conditions. `"pb_only"`
-#'   includes any biased condition: medium/high censoring OR medium/high QRP,
-#'   including QRP-only conditions without censoring.
-#' @param pooling Legacy advanced aggregation option, retained for existing
-#'   scripts. The default `"publication_bias"` groups the selected conditions
-#'   by K, true effect, population tau and QRP, averaging eligible Censoring
-#'   levels equally. `"none"` retains full individual conditions.
-#'   Within each condition, mean tau uses valid estimates among its 1,000
-#'   replications; `n_tau` records their count. `mean_tau2` is the average
-#'   estimated variance, not the square of `mean_tau`.
-#' @param censoring `"all"` (default) includes Censoring none/medium/high,
-#'   `"without"` includes none, and `"with"` includes medium/high. This filter
-#'   is independent of QRP. Grouped results automatically average the selected
-#'   Censoring levels while keeping QRP levels separate.
+#' @param qrp `"all"`, `"without"` (none), or `"with"` (medium/high).
+#' @param universe Legacy additional filter: `"all"` or `"pb_only"` (QRP or
+#'   Censoring medium/high). The standard app uses the direct QRP/Censoring filters.
+#' @param pooling Retained to give existing scripts a clear migration error.
+#'   Only `"none"` is supported. Pooling before matching is no longer performed.
+#' @param censoring `"all"`, `"without"` (none), or `"with"` (medium/high),
+#'   independently of QRP. Selecting All keeps all three Censoring levels separate.
 #'
-#' @details If K was simulated, only that K is searched. Otherwise the nearest K
-#'   below and above are searched separately. At each K, the closest mean tau
-#'   below and above the target is returned. Exact tau matches take priority;
-#'   all ties within numerical tolerance (1e-12 on the tau scale) are retained.
-#'   Outside the simulated range, only the available boundary is returned.
+#' @details Each condition has 1,000 simulation replications. `mean_tau` is the
+#'   mean of valid estimated standard deviations within that condition;
+#'   `mean_tau2` is the mean estimated variance, not squared mean tau.
+#'   No Censoring levels, QRP levels or conditions are pooled before matching.
+#'   Exact K is used when available; otherwise the nearest lower and upper K
+#'   are searched separately. At each K the immediately lower/upper mean tau
+#'   is returned. Exact tau matches take priority; ties within 1e-12 on the tau
+#'   scale are retained. Only available boundaries are returned outside the range.
 #'
-#'   Rejection rates exclude missing tests. Applicability is valid replications
-#'   divided by total replications. A condition is biased when censoring or QRP
-#'   is non-zero. TPR is available for biased conditions, FPR for unbiased
-#'   conditions; Balanced Accuracy requires both. Missing metrics remain NA.
-#'   Pooled rates give equal weight to component-condition rates.
+#'   A condition is biased when QRP or Censoring is medium/high. Individual
+#'   biased conditions provide TPR; individual unbiased conditions provide FPR.
+#'   An individual condition's Balanced Accuracy is unavailable.
 #'
-#'   The returned summary gives equal weight to each selected match. A method's
-#'   mean Balanced Accuracy or rejection rate is available only when that metric
-#'   is finite for every match. Missing values are never replaced with zero.
-#'   Summary rows are sorted by mean Balanced Accuracy, with unavailable means
-#'   last. Low applicability is reported separately and retained in the output.
+#'   After selection, `summary$mean_tpr` averages the selected biased conditions'
+#'   rejection rates, and `mean_fpr` averages selected unbiased conditions'
+#'   rejection rates. `balanced_accuracy = (mean_tpr + 1 - mean_fpr) / 2`, giving
+#'   the two classes equal weight. Each condition receives equal weight within
+#'   its class. Both classes are required; all selected conditions within each
+#'   class must have valid rates. Missing results are never replaced with zero
+#'   and no extra control conditions are introduced. This is a descriptive
+#'   comparison of the selected neighbours, not an interpolated prediction.
+#'   Mean rejection rate and applicability give equal weight to all matches.
+#'   Low applicability is reported separately.
 #'
-#' @return An object of class `pbias_closest_result` with `matches` (condition
-#'   settings), `performance` (numeric results for all 21 methods per match),
-#'   `summary` (one row per method, averaged across all matches),
-#'   `candidates` (the eligible conditions), `notes` (boundary messages), and
-#'   `meta` (inputs, aggregation and simulation-data provenance). Rates are
-#'   proportions, not percentages. Printing shows the matches on
-#'   both heterogeneity scales and the mean Balanced Accuracy table. Defaults
-#'   are Extended, all QRP levels, all conditions and pooled censoring levels.
+#' @return A `pbias_closest_result` with `matches` (full individual conditions),
+#'   `performance` (21 numeric method results per match), `summary` (method
+#'   comparison after selection, sorted by Balanced Accuracy), `candidates`
+#'   (eligible individual conditions), `notes`, and `meta` (inputs, searched K
+#'   counts, weighting and simulation provenance). Rates are proportions.
 #' @export
 #' @examples
 #' near <- pbias_closest(k = 65, tau = 0.2)
 #' near
-#' head(near$performance)
-#' # If your estimate is tau-squared = 0.04:
-#' pbias_closest(k = 60, tau = sqrt(0.04), censoring = "all")
+#' near$summary
+#' near$matches
+#' pbias_closest(60, sqrt(0.04), qrp = "without", censoring = "all")
 pbias_closest <- function(k, tau, design = c("extended", "original"),
                           qrp = c("all", "without", "with"),
                           universe = c("all", "pb_only"),
-                          pooling = c("publication_bias", "none"),
+                          pooling = c("none", "publication_bias"),
                           censoring = c("all", "without", "with")) {
   if (!is.numeric(k) || length(k) != 1L || !is.finite(k) || k < 3 || k != floor(k)) {
     stop("k must be one finite whole number of studies, at least 3.", call. = FALSE)
@@ -72,36 +65,19 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
   if (!is.numeric(tau) || length(tau) != 1L || !is.finite(tau) || tau < 0) {
     stop("tau must be one finite, non-negative estimated standard deviation; use sqrt(tau2) for a variance.", call. = FALSE)
   }
-  design <- match.arg(design)
-  qrp <- match.arg(qrp)
-  universe <- match.arg(universe)
-  pooling <- match.arg(pooling)
+  design <- match.arg(design); qrp <- match.arg(qrp)
+  universe <- match.arg(universe); pooling <- match.arg(pooling)
   censoring <- match.arg(censoring)
+  if (pooling != "none") stop("Censoring pooling before matching is no longer supported. Omit pooling or use pooling = 'none'.", call. = FALSE)
   data <- readRDS(.pbias_extdata_file("closest_conditions.rds"))
-  if (pooling == "none") {
-    candidates <- data$conditions
-    candidates$profile_id <- paste0("condition-", candidates$Environment)
-    candidates$n_conditions <- 1L
-    candidates$n_unbiased_conditions <- as.integer(!candidates$biased)
-    candidates$n_biased_conditions <- as.integer(candidates$biased)
-    if (universe == "pb_only") candidates <- candidates[candidates$biased, , drop = FALSE]
-    if (censoring == "without") candidates <- candidates[candidates$Censor == "none", , drop = FALSE]
-    if (censoring == "with") candidates <- candidates[candidates$Censor != "none", , drop = FALSE]
-    performance <- data$condition_performance
-    performance$profile_id <- paste0("condition-", performance$Environment)
-    index <- match(performance$Environment, data$conditions$Environment)
-    performance$n_total <- data$conditions$n_total[index]
-    biased <- data$conditions$biased[index]
-    performance$rejection_rate <- performance$rate
-    performance$applicability <- performance$n_valid / performance$n_total
-    performance$tpr <- ifelse(biased, performance$rate, NA_real_)
-    performance$fpr <- ifelse(!biased, performance$rate, NA_real_)
-    performance$balanced_accuracy <- NA_real_
-  } else {
-    candidates <- data$profiles[data$profiles$universe == universe & data$profiles$censoring == censoring, , drop = FALSE]
-    candidates$Environment <- NA_integer_
-    performance <- data$performance
-  }
+  candidates <- data$conditions
+  candidates$profile_id <- paste0("condition-", candidates$Environment)
+  candidates$n_conditions <- 1L
+  candidates$n_unbiased_conditions <- as.integer(!candidates$biased)
+  candidates$n_biased_conditions <- as.integer(candidates$biased)
+  if (universe == "pb_only") candidates <- candidates[candidates$biased, , drop = FALSE]
+  if (censoring == "without") candidates <- candidates[candidates$Censor == "none", , drop = FALSE]
+  if (censoring == "with") candidates <- candidates[candidates$Censor != "none", , drop = FALSE]
   if (design == "original") candidates <- candidates[candidates$K >= 10 & candidates$K <= 100, , drop = FALSE]
   if (qrp == "without") candidates <- candidates[candidates$QRP == "none", , drop = FALSE]
   if (qrp == "with") candidates <- candidates[candidates$QRP != "none", , drop = FALSE]
@@ -111,32 +87,44 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
   matches <- .pbias_bracket(candidates, k, tau)
   matches$match_id <- paste0("M", seq_len(nrow(matches)))
   matches$match_label <- paste0(matches$match_id, ": K = ", matches$K,
-                                ", mean tau = ", formatC(matches$mean_tau, format = "f", digits = 5))
-  perf <- performance[performance$profile_id %in% matches$profile_id, , drop = FALSE]
-  perf$match_id <- matches$match_id[match(perf$profile_id, matches$profile_id)]
+                              ", mean tau = ", formatC(matches$mean_tau, format = "f", digits = 6))
+  matches$role <- ifelse(matches$biased, "Biased", "Unbiased")
+  perf <- data$condition_performance
+  perf <- perf[perf$Environment %in% matches$Environment, , drop = FALSE]
+  index <- match(perf$Environment, matches$Environment)
+  perf$profile_id <- matches$profile_id[index]
+  perf$match_id <- matches$match_id[index]
+  perf$n_total <- matches$n_total[index]
+  perf$rejection_rate <- perf$rate
+  perf$applicability <- perf$n_valid / perf$n_total
+  perf$tpr <- ifelse(matches$biased[index], perf$rate, NA_real_)
+  perf$fpr <- ifelse(!matches$biased[index], perf$rate, NA_real_)
+  perf$balanced_accuracy <- NA_real_
   perf$status <- ifelse(perf$n_valid == 0, "Unavailable",
-                        ifelse(perf$applicability < 0.9, "Below 90% applicability", "Meets 90% threshold"))
+                       ifelse(perf$applicability < 0.9, "Below 90% applicability", "Meets 90% threshold"))
   methods <- c("BEGG", paste0("EGGER", 1:5), "EK", "SKEW1", "SKEW2", "PSM3", "PSM4",
                "AK1", "AK2", "PUNIF", "TES", "PSST", "TESS", "CALI05", "CALI10", "CALI15", "CALI20")
   perf <- perf[order(match(perf$match_id, matches$match_id), match(perf$method, methods)),
                c("match_id", "profile_id", "method", "rejection_rate", "applicability", "n_valid", "n_total",
                  "tpr", "fpr", "balanced_accuracy", "status"), drop = FALSE]
   rownames(perf) <- NULL
-  summary <- .pbias_closest_summary(perf, matches$match_id)
+  summary <- .pbias_closest_summary(perf, matches$match_id, matches$biased)
+  ks <- sort(unique(candidates$K)); searched_k <- sort(unique(matches$K))
+  searched_counts <- table(factor(candidates$K[candidates$K %in% searched_k], levels = searched_k))
   notes <- character()
-  ks <- sort(unique(candidates$K))
-  if (k < min(ks) || k > max(ks)) notes <- c(notes, paste0(
-    "K is outside the simulated range (", min(ks), "-", max(ks), "). Only the nearest available K is shown."))
-  for (value_k in unique(matches$K)) {
+  if (k < min(ks) || k > max(ks)) notes <- c(notes, paste0("K is outside the simulated range (", min(ks), "-", max(ks), "). Only the nearest available K is shown."))
+  for (value_k in searched_k) {
     values <- candidates$mean_tau[candidates$K == value_k]
-    if (tau < min(values) || tau > max(values)) notes <- c(notes, paste0(
-      "At K = ", value_k, ", tau is outside the available range; only the nearest boundary condition is shown."))
+    if (tau < min(values) || tau > max(values)) notes <- c(notes, paste0("At K = ", value_k, ", tau is outside the available range; only the nearest boundary condition is shown."))
   }
   structure(list(matches = matches, performance = perf, summary = summary, candidates = candidates, notes = notes,
-                 meta = c(list(k = k, tau = tau, design = design, qrp = qrp, universe = universe,
-                               pooling = pooling, censoring = censoring, package_version = "0.3.2",
-                               summary_weighting = "Equal weight per match; all matches must have a valid metric"), data$metadata)),
-            class = "pbias_closest_result")
+    meta = c(list(k = k, tau = tau, design = design, qrp = qrp, universe = universe, pooling = "none",
+                  censoring = censoring, package_version = "0.4.0", n_candidates = nrow(candidates),
+                  searched_k = searched_k, searched_counts = stats::setNames(as.integer(searched_counts), searched_k),
+                  n_searched = sum(searched_counts),
+                  summary_weighting = "Mean TPR across selected biased conditions; mean FPR across selected unbiased conditions; equal weight per class; complete rates required",
+                  matching_unit = "Individual full simulation condition; no pooling before selection"), data$metadata)),
+    class = "pbias_closest_result")
 }
 
 .pbias_bracket <- function(candidates, k, tau) {
@@ -173,46 +161,44 @@ pbias_closest <- function(k, tau, design = c("extended", "original"),
 #' @return `x`, invisibly.
 #' @export
 print.pbias_closest_result <- function(x, ...) {
-  cat("Closest simulation conditions\n")
-  cat(sprintf("K = %s; estimated tau = %.6g; tau-squared = %.6g\n",
-              x$meta$k, x$meta$tau, x$meta$tau^2))
-  cat(sprintf("%s design | QRP: %s | Censoring: %s\n",
-              x$meta$design, x$meta$qrp, x$meta$censoring))
-  if (x$meta$universe != "all") cat("Additional legacy filter: biased conditions only (QRP or Censoring).\n")
-  if (x$meta$pooling == "none") cat("Legacy individual-condition output.\n")
+  cat("Closest individual simulation conditions\n")
+  cat(sprintf("K = %s; estimated tau = %.6g; tau-squared = %.6g\n", x$meta$k, x$meta$tau, x$meta$tau^2))
+  cat(sprintf("%s design | QRP: %s | Censoring: %s\n", x$meta$design, x$meta$qrp, x$meta$censoring))
+  cat(sprintf("%s eligible conditions; %s searched at K = %s.\n", x$meta$n_candidates, x$meta$n_searched, paste(x$meta$searched_k, collapse = ", ")))
   m <- x$matches
-  print(data.frame(Match = m$match_id, K = m$K, Mean_tau = round(m$mean_tau, 6),
-                   Mean_tau2 = round(m$mean_tau2, 6),
-                   Side = sub("Tau ", "", sub("Exact tau", "Exact", m$heterogeneity_match))), row.names = FALSE)
-  cat("Full condition settings: $matches. All 21 methods per match: $performance.\n\n")
+  print(data.frame(Match = m$match_id, K = m$K, Mean_tau = round(m$mean_tau, 6), Mean_tau2 = round(m$mean_tau2, 6),
+                   QRP = m$QRP, Censoring = m$Censor, Role = m$role), row.names = FALSE)
   s <- x$summary
-  pct <- function(z) ifelse(is.finite(z), sprintf("%.1f%%", 100 * z), "n/a")
-  print(data.frame(Method = s$method, Mean_BA = pct(s$mean_balanced_accuracy),
-                   BA_matches = paste0(s$ba_available, "/", s$n_matches),
-                   Mean_applicability = pct(s$mean_applicability),
-                   Low_applicability = s$low_applicability_matches), row.names = FALSE)
-  cat("Equal weight per match; an average requires valid values in every match.\n")
-  cat("Low applicability counts matches below 90%; inspect these before comparing methods.\n")
+  pct <- function(z) ifelse(is.finite(z), sprintf("%.1f%%", 100*z), "n/a")
+  cat("\nDescriptive performance across the selected conditions:\n")
+  print(data.frame(Method = s$method, BA = pct(s$balanced_accuracy), TPR = pct(s$mean_tpr), FPR = pct(s$mean_fpr),
+                   TPR_matches = paste0(s$tpr_available, "/", s$n_biased_matches),
+                   FPR_matches = paste0(s$fpr_available, "/", s$n_unbiased_matches)), row.names = FALSE)
+  cat("BA = (mean TPR + 1 - mean FPR) / 2; both classes and complete selected rates required.\n")
+  cat("Per-condition BA is unavailable. Inspect $performance for rates/applicability and $matches for settings.\n")
   if (length(x$notes)) cat(paste(x$notes, collapse = "\n"), "\n")
   invisible(x)
 }
 
-.pbias_closest_summary <- function(performance, match_ids) {
-  methods <- unique(performance$method)
-  n <- length(match_ids)
-  complete_mean <- function(z) if (length(z) == n && all(is.finite(z))) mean(z) else NA_real_
+.pbias_closest_summary <- function(performance, match_ids, biased) {
+  methods <- unique(performance$method); n <- length(match_ids)
+  complete_mean <- function(z) if (length(z) && all(is.finite(z))) mean(z) else NA_real_
   out <- do.call(rbind, lapply(methods, function(method) {
     p <- performance[performance$method == method, , drop = FALSE]
     p <- p[match(match_ids, p$match_id), , drop = FALSE]
-    data.frame(method = method, mean_balanced_accuracy = complete_mean(p$balanced_accuracy),
-               mean_rejection_rate = complete_mean(p$rejection_rate),
-               mean_applicability = complete_mean(p$applicability),
-               min_applicability = if (all(is.finite(p$applicability))) min(p$applicability) else NA_real_,
-               n_matches = n, ba_available = sum(is.finite(p$balanced_accuracy)),
-               rejection_available = sum(is.finite(p$rejection_rate)),
-               low_applicability_matches = sum(!is.finite(p$applicability) | p$applicability < 0.9))
+    tpr <- complete_mean(p$rejection_rate[biased]); fpr <- complete_mean(p$rejection_rate[!biased])
+    ba <- (tpr + 1 - fpr)/2
+    data.frame(method = method, balanced_accuracy = ba, mean_tpr = tpr, mean_fpr = fpr,
+      mean_rejection_rate = complete_mean(p$rejection_rate), mean_applicability = complete_mean(p$applicability),
+      min_applicability = if (all(is.finite(p$applicability))) min(p$applicability) else NA_real_,
+      n_matches = n, n_biased_matches = sum(biased), n_unbiased_matches = sum(!biased),
+      tpr_available = sum(is.finite(p$rejection_rate[biased])), fpr_available = sum(is.finite(p$rejection_rate[!biased])),
+      rejection_available = sum(is.finite(p$rejection_rate)),
+      low_applicability_matches = sum(!is.finite(p$applicability) | p$applicability < .9),
+      comparison_status = if (!any(biased) || all(biased)) "Needs biased and unbiased matches" else
+        if (!is.finite(ba)) "Missing result in a selected condition" else "Complete selected-condition comparison")
   }))
-  out <- out[order(-out$mean_balanced_accuracy, match(out$method, methods), na.last = TRUE), , drop = FALSE]
+  out <- out[order(-out$balanced_accuracy, match(out$method, methods), na.last = TRUE), , drop = FALSE]
   rownames(out) <- NULL
   out
 }

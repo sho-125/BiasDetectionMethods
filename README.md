@@ -67,7 +67,7 @@ remotes::install_local("pbiasr")
 Or from a local tarball:
 
 ```r
-install.packages("pbiasr_0.3.2.tar.gz", repos = NULL, type = "source")
+install.packages("pbiasr_0.4.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
@@ -175,7 +175,7 @@ The default sort is Logit Distance. Use `ranking_metric = "balanced_accuracy"` t
 TES uses the reference right-tail alpha of 0.025 when `alpha = 0.05`. Default caliper windows reproduce the literal 1.96-centered boundaries in the simulation code (for example CALI05 uses 1.86-1.96 and 1.96-2.06), including the five-observation applicability rule.
 
 
-## Closest simulation conditions (0.3.0)
+## Closest individual simulation conditions (0.4.0)
 
 ```r
 near <- pbias_closest(k = 65, tau = 0.2)
@@ -191,22 +191,21 @@ pbias_closest(k = 65, tau = sqrt(0.04), censoring = "all")
 pbias_closest(k = 30, tau = 0.2, design = "original", qrp = "with")
 ```
 
-The defaults are **Extended / QRP All / Censoring All**. Results are grouped automatically: K, true effect, population tau and QRP stay fixed, while the selected Censoring levels are averaged equally.
+The defaults are **Extended / QRP All / Censoring All**. Matching searches all **864 individual conditions**, or 432 under Original. Each full K / true-effect / population-tau / QRP / Censoring condition retains its own mean estimated tau. There is no pooling across Censoring or QRP levels before matching.
+
+K is matched first: exact K, or nearest lower/upper K. Within each selected K, the immediately lower and upper mean estimated tau are selected. Exact matches take priority; ties are retained. For K=65 and tau=0.2, this searches 108 conditions at K=60 and 108 at K=100, then selects four individual conditions.
+
+QRP and Censoring filters independently accept `without` (none), `with` (medium/high) and `all`. Mean tau and mean tau-squared average valid simulation replications within each condition. The latter is the mean estimated variance, not squared mean tau. `matches$n_tau` records the valid count.
 
 ```r
-pbias_closest(65, 0.2, qrp = "without", censoring = "all")
-pbias_closest(65, 0.2, qrp = "all", censoring = "without")
-pbias_closest(65, 0.2, qrp = "with", censoring = "with")
+near <- pbias_closest(65, 0.2, qrp = "all", censoring = "all")
+near$matches     # four separate neighbours, with roles and full settings
+near$performance # 21 methods per condition: TPR or FPR and applicability
+near$summary     # descriptive performance AFTER selecting neighbours
 ```
 
-For both filters, `without` means none, `with` means medium/high, and `all` means all three levels. The filters are independent. QRP levels stay separate. Each group combines one Censoring level for Without, two for With, or three for All.
+A condition is biased when QRP or Censoring is medium/high. A biased condition supplies TPR; an unbiased condition supplies FPR. Individual-condition BA is unavailable. After selecting neighbours, summary mean TPR averages the biased conditions' rates and mean FPR averages the unbiased conditions' rates. **BA = (mean TPR + 1 - mean FPR) / 2**. Each class gets half the weight, and conditions within a class receive equal weight. Both classes and a valid rate in every selected condition are required; missing results are not filled with zero. This describes the selected simulation neighbours and is not an interpolated prediction for the user's meta-analysis. Applicability and missing-result coverage are retained.
 
-A condition is classified as biased when QRP or Censoring is medium/high. Therefore QRP-only conditions remain biased even under `censoring = "without"`. Balanced Accuracy needs biased and unbiased results within a matched group; where those are absent it remains `NA`. Rejection rates remain available, with their applicability counts.
+If only one class is selected, BA remains `NA` and mean rejection rates remain available. Hover and CSV exports identify every condition's role and its TPR/FPR contribution. Low applicability is flagged separately. The Shiny app uses this same package function.
 
-K is matched first, followed by the nearest lower/upper mean estimated tau at each selected K. Exact matches take priority, ties are retained, and boundary messages explain when only one side is available. Within each full condition, mean tau uses valid estimates among 1,000 replications. `matches$n_tau` records the valid count. Mean tau-squared is the average estimated variance and differs from squared mean tau.
-
-`near$summary` gives one row per method, sorted by mean Balanced Accuracy with equal weight per selected match. Complete averages require finite values in every match; `ba_available` and `n_matches` show coverage. Detailed values remain in `near$performance`. Low applicability is flagged separately.
-
-Legacy advanced arguments `universe` and `pooling` remain supported for existing scripts. The standard app uses the direct QRP and Censoring filters and automatic grouping.
-
-The app uses this same package function for matching, average-performance figures and CSV exports. The source summaries cover all 864 Extended conditions; Original restricts K to 10, 30, 60 and 100 (432 conditions based on Carter et al., 2019).
+`pooling = "none"` is the only supported selection mode; older requests for `pooling = "publication_bias"` fail clearly rather than silently changing the search. The legacy `universe` filter is still supported. Raw test corrections from 0.2.9 remain in place.

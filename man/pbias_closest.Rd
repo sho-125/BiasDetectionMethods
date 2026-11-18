@@ -2,7 +2,7 @@
 % Please edit documentation in R/closest.R
 \name{pbias_closest}
 \alias{pbias_closest}
-\title{Find simulation conditions closest to a meta-analysis}
+\title{Find individual simulation conditions closest to a meta-analysis}
 \usage{
 pbias_closest(
   k,
@@ -10,79 +10,72 @@ pbias_closest(
   design = c("extended", "original"),
   qrp = c("all", "without", "with"),
   universe = c("all", "pb_only"),
-  pooling = c("publication_bias", "none"),
+  pooling = c("none", "publication_bias"),
   censoring = c("all", "without", "with")
 )
 }
 \arguments{
-\item{k}{A single whole number of studies, at least 3.}
+\item{k}{A single finite whole number of studies, at least 3.}
 
-\item{tau}{A single finite, non-negative estimated between-study standard
-deviation. If you have estimated tau-squared, supply `sqrt(tau2)`.}
+\item{tau}{Estimated between-study standard deviation, finite and non-negative.
+Supply `sqrt(tau2)` if your estimate is a variance.}
 
 \item{design}{`"extended"` (864 conditions, K = 5 to 800) or `"original"`
 (432 conditions, K = 10 to 100, based on Carter et al., 2019).}
 
-\item{qrp}{`"without"` for QRP none, `"with"` for QRP medium/high,
-or `"all"` for all three QRP levels. Levels remain separate.}
+\item{qrp}{`"all"`, `"without"` (none), or `"with"` (medium/high).}
 
-\item{universe}{Legacy advanced filter, retained for compatibility.
-`"all"` (default) includes all conditions. `"pb_only"`
-includes any biased condition: medium/high censoring OR medium/high QRP,
-including QRP-only conditions without censoring.}
+\item{universe}{Legacy additional filter: `"all"` or `"pb_only"` (QRP or
+Censoring medium/high). The standard app uses the direct QRP/Censoring filters.}
 
-\item{pooling}{Legacy advanced aggregation option, retained for existing
-scripts. The default `"publication_bias"` groups the selected conditions
-by K, true effect, population tau and QRP, averaging eligible Censoring
-levels equally. `"none"` retains full individual conditions.
-Within each condition, mean tau uses valid estimates among its 1,000
-replications; `n_tau` records their count. `mean_tau2` is the average
-estimated variance, not the square of `mean_tau`.}
+\item{pooling}{Retained to give existing scripts a clear migration error.
+Only `"none"` is supported. Pooling before matching is no longer performed.}
 
-\item{censoring}{`"all"` (default) includes Censoring none/medium/high,
-`"without"` includes none, and `"with"` includes medium/high. This filter
-is independent of QRP. Grouped results automatically average the selected
-Censoring levels while keeping QRP levels separate.}
+\item{censoring}{`"all"`, `"without"` (none), or `"with"` (medium/high),
+independently of QRP. Selecting All keeps all three Censoring levels separate.}
 }
 \value{
-An object of class `pbias_closest_result` with `matches` (condition
-  settings), `performance` (numeric results for all 21 methods per match),
-  `summary` (one row per method, averaged across all matches),
-  `candidates` (the eligible conditions), `notes` (boundary messages), and
-  `meta` (inputs, aggregation and simulation-data provenance). Rates are
-  proportions, not percentages. Printing shows the matches on
-  both heterogeneity scales and the mean Balanced Accuracy table. Defaults
-  are Extended, all QRP levels, all conditions and pooled censoring levels.
+A `pbias_closest_result` with `matches` (full individual conditions),
+  `performance` (21 numeric method results per match), `summary` (method
+  comparison after selection, sorted by Balanced Accuracy), `candidates`
+  (eligible individual conditions), `notes`, and `meta` (inputs, searched K
+  counts, weighting and simulation provenance). Rates are proportions.
 }
 \description{
-Matches the number of studies first, then brackets the supplied estimated
-heterogeneity with mean estimated tau from the simulations. Results for
-neighbouring conditions are kept separate; no distance score or interpolation
-is used. This is a lookup of simulation performance, not a test of new data.
+Filters the full simulation conditions, matches K first, then brackets the
+target tau using each condition's mean estimated tau. Censoring and QRP
+levels remain separate throughout selection. Performance is summarised only
+after the neighbours have been selected.
 }
 \details{
-If K was simulated, only that K is searched. Otherwise the nearest K
-  below and above are searched separately. At each K, the closest mean tau
-  below and above the target is returned. Exact tau matches take priority;
-  all ties within numerical tolerance (1e-12 on the tau scale) are retained.
-  Outside the simulated range, only the available boundary is returned.
+Each condition has 1,000 simulation replications. `mean_tau` is the
+  mean of valid estimated standard deviations within that condition;
+  `mean_tau2` is the mean estimated variance, not squared mean tau.
+  No Censoring levels, QRP levels or conditions are pooled before matching.
+  Exact K is used when available; otherwise the nearest lower and upper K
+  are searched separately. At each K the immediately lower/upper mean tau
+  is returned. Exact tau matches take priority; ties within 1e-12 on the tau
+  scale are retained. Only available boundaries are returned outside the range.
 
-  Rejection rates exclude missing tests. Applicability is valid replications
-  divided by total replications. A condition is biased when censoring or QRP
-  is non-zero. TPR is available for biased conditions, FPR for unbiased
-  conditions; Balanced Accuracy requires both. Missing metrics remain NA.
-  Pooled rates give equal weight to component-condition rates.
+  A condition is biased when QRP or Censoring is medium/high. Individual
+  biased conditions provide TPR; individual unbiased conditions provide FPR.
+  An individual condition's Balanced Accuracy is unavailable.
 
-  The returned summary gives equal weight to each selected match. A method's
-  mean Balanced Accuracy or rejection rate is available only when that metric
-  is finite for every match. Missing values are never replaced with zero.
-  Summary rows are sorted by mean Balanced Accuracy, with unavailable means
-  last. Low applicability is reported separately and retained in the output.
+  After selection, `summary$mean_tpr` averages the selected biased conditions'
+  rejection rates, and `mean_fpr` averages selected unbiased conditions'
+  rejection rates. `balanced_accuracy = (mean_tpr + 1 - mean_fpr) / 2`, giving
+  the two classes equal weight. Each condition receives equal weight within
+  its class. Both classes are required; all selected conditions within each
+  class must have valid rates. Missing results are never replaced with zero
+  and no extra control conditions are introduced. This is a descriptive
+  comparison of the selected neighbours, not an interpolated prediction.
+  Mean rejection rate and applicability give equal weight to all matches.
+  Low applicability is reported separately.
 }
 \examples{
 near <- pbias_closest(k = 65, tau = 0.2)
 near
-head(near$performance)
-# If your estimate is tau-squared = 0.04:
-pbias_closest(k = 60, tau = sqrt(0.04), censoring = "all")
+near$summary
+near$matches
+pbias_closest(60, sqrt(0.04), qrp = "without", censoring = "all")
 }
